@@ -1,0 +1,21 @@
+[package]
+name = "super-star"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+backtraces = ["cosmwasm-std/backtraces"]
+# use library feature to disable all instantiate/execute/query exports
+library = []
+
+[dependencies]
+cosmwasm-std = "1.1.6"
+cosmwasm-schema = "1.1.6"
+cw-storage-plus = "0.16.0"
+cw-utils = "0.16.0"
+thiserror = "1.0.37"
+nois = "0.5.1"
+cw2 = "0.16.0"
