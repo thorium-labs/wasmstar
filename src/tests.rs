@@ -33,7 +33,7 @@ fn do_instantaite() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
 #[test]
 fn cannot_buy_tickets_when_lottery_is_expired_or_not_open() {
     let deps = do_instantaite();
-    let res = get_current_lottery(deps.as_ref()).unwrap_err();
+    let res = get_current_lottery(deps.as_ref()).unwrap();
 
     println!("{:?}", res);
 }

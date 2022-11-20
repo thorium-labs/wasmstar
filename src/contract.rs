@@ -83,7 +83,7 @@ pub fn buy_tickets(
     env: Env,
     info: MessageInfo,
     tickets: Vec<String>,
-    lottery_id: u32,
+    lottery_id: u64,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
     let current_lottery = TOTAL_LOTTERIES.load(deps.storage)?;
@@ -97,9 +97,9 @@ pub fn buy_tickets(
         .may_load(deps.storage, (lottery_id, info.sender.clone()))?
         .unwrap_or_default();
 
-    let n_tickets = tickets.len() as u32;
+    let n_tickets = tickets.len() as u64;
 
-    if n_tickets.add(tickets_bought.len() as u32) > config.max_tickets_per_user {
+    if n_tickets.add(tickets_bought.len() as u64) > config.max_tickets_per_user {
         return Err(ContractError::TicketBoughtExceeded);
     }
 
@@ -136,7 +136,7 @@ pub fn buy_tickets(
 pub fn claim_lottery(
     deps: DepsMut,
     info: MessageInfo,
-    lottery_id: u32,
+    lottery_id: u64,
 ) -> Result<Response, ContractError> {
     if WINNERS
         .may_load(deps.storage, (lottery_id, info.sender.clone()))?
@@ -145,9 +145,12 @@ pub fn claim_lottery(
         return Err(ContractError::AlreadyClaimed);
     }
 
-    // check is claim
-
     let lottery = LOTTERIES.load(deps.storage, lottery_id)?;
+
+    if lottery.status != Status::Claimable {
+        return Err(ContractError::LotteryIsNotClaimable);
+    }
+
     let tickets = TICKETS.load(deps.storage, (lottery_id, info.sender.clone()))?;
 
     let t_result = check_tickets(
@@ -187,7 +190,7 @@ pub fn execute_lottery(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    lottery_id: u32,
+    lottery_id: u64,
 ) -> Result<Response, ContractError> {
     let mut lottery = LOTTERIES.load(deps.storage, lottery_id.clone())?;
 
@@ -232,7 +235,7 @@ pub fn random_callback(
 
     let lottery_id = callback
         .job_id
-        .parse::<u32>()
+        .parse::<u64>()
         .expect("error parsing job_id");
 
     let tickets = TICKETS
@@ -266,19 +269,18 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn get_current_lottery(deps: Deps) -> StdResult<Lottery> {
-    let lottery_id = TOTAL_LOTTERIES.load(deps.storage)?;
-    Ok(LOTTERIES.load(deps.storage, lottery_id)?)
+    Ok(LOTTERIES.load(deps.storage, TOTAL_LOTTERIES.load(deps.storage)?)?)
 }
 
-pub fn get_lottery(deps: Deps, lottery_id: u32) -> StdResult<Option<Lottery>> {
+pub fn get_lottery(deps: Deps, lottery_id: u64) -> StdResult<Option<Lottery>> {
     Ok(LOTTERIES.may_load(deps.storage, lottery_id)?)
 }
 
-pub fn check_winner(deps: Deps, addr: String, lottery_id: u32) -> StdResult<Vec<TicketResult>> {
+pub fn check_winner(deps: Deps, addr: String, lottery_id: u64) -> StdResult<Vec<TicketResult>> {
     let verify_addr = deps.api.addr_validate(addr.as_str())?;
-
     let lottery = LOTTERIES.load(deps.storage, lottery_id)?;
     let tickets = TICKETS.load(deps.storage, (lottery_id, verify_addr))?;
+
     if let Some(w_number) = lottery.winner_number {
         Ok(check_tickets(tickets, w_number))
     } else {

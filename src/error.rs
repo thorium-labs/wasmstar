@@ -35,4 +35,7 @@ pub enum ContractError {
 
     #[error("AlreadyClaimed")]
     AlreadyClaimed,
+
+    #[error("LotteryIsNotClaimable")]
+    LotteryIsNotClaimable,
 }

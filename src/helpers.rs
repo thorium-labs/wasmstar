@@ -35,7 +35,8 @@ pub fn ensure_is_enough_funds_to_cover_tickets(
 }
 
 pub fn create_next_lottery(deps: DepsMut, env: Env) -> StdResult<()> {
-    let lottery_id = TOTAL_LOTTERIES.load(deps.storage)?;
+    let lottery_id =
+        TOTAL_LOTTERIES.update(deps.storage, |id: u64| -> StdResult<u64> { Ok(id.add(1)) })?;
     let config = CONFIG.load(deps.storage)?;
 
     let end_time = Expiration::AtTime(env.block.time)
@@ -43,7 +44,7 @@ pub fn create_next_lottery(deps: DepsMut, env: Env) -> StdResult<()> {
         .expect("error defining end_time");
 
     let lottery = Lottery {
-        id: 1,
+        id: lottery_id,
         status: Status::Open,
         end_time,
         winner_number: None,
@@ -54,9 +55,7 @@ pub fn create_next_lottery(deps: DepsMut, env: Env) -> StdResult<()> {
         winners_per_match: None,
     };
 
-    println!("Creating new lottery: {:?}", lottery.clone());
-
-    LOTTERIES.save(deps.storage, 1, &lottery.clone())?;
+    LOTTERIES.save(deps.storage, lottery_id, &lottery.clone())?;
 
     Ok(())
 }
@@ -74,7 +73,7 @@ pub fn calculate_prize_distribution(
 pub fn calculate_tickets_prize(
     tickets: Vec<TicketResult>,
     prize_per_match: [Uint128; 6],
-    winners_per_match: [u32; 6],
+    winners_per_match: [u64; 6],
     denom: String,
 ) -> Coin {
     let mut prize = Uint128::zero();
@@ -95,13 +94,13 @@ pub fn calculate_tickets_prize(
 pub fn calculate_winner_per_match(
     tickets: impl Iterator<Item = String>,
     winning_ticket: String,
-) -> [u32; 6] {
+) -> [u64; 6] {
     tickets
-        .map(|t| -> u32 {
+        .map(|t| -> u64 {
             t.chars()
                 .zip(winning_ticket.chars())
                 .filter_map(|(a, b)| (a == b).then_some(true))
-                .count() as u32
+                .count() as u64
         })
         .fold([0; 6], |mut acc, n| {
             if n > 0 {
@@ -115,11 +114,13 @@ pub fn check_tickets(tickets: Vec<String>, winning_ticket: String) -> Vec<Ticket
     tickets
         .iter()
         .map(|t| -> TicketResult {
-            let prediction = t.chars().zip(winning_ticket.chars()).map(|(a, b)| a == b);
-            let matches = prediction.clone().filter(|&x| x).count() as u8;
+            let matches = t
+                .chars()
+                .zip(winning_ticket.chars())
+                .filter_map(|(a, b)| Some(a == b))
+                .count() as u8;
             TicketResult {
                 ticket_number: t.clone(),
-                prediction: prediction.collect(),
                 matches,
             }
         })

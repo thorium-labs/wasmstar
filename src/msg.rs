@@ -11,7 +11,7 @@ pub struct InstantiateMsg {
     pub ticket_price: Coin,
     pub lottery_interval: Duration,
     pub nois_proxy: String,
-    pub max_tickets_per_user: u32,
+    pub max_tickets_per_user: u64,
     pub percentage_per_match: [u8; 6],
 }
 
@@ -19,13 +19,13 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     BuyTicket {
         tickets: Vec<String>,
-        lottery_id: u32,
+        lottery_id: u64,
     },
     ClaimLottery {
-        id: u32,
+        id: u64,
     },
     ExecuteLottery {
-        id: u32,
+        id: u64,
     },
     Receive {
         callback: NoisCallback,
@@ -36,9 +36,9 @@ pub enum ExecuteMsg {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     #[returns(Lottery)]
-    GetLottery { id: u32 },
+    GetLottery { id: u64 },
     #[returns(Lottery)]
     GetCurrentLottery {},
     #[returns(Vec<TicketResult>)]
-    CheckWinner { addr: String, lottery_id: u32 },
+    CheckWinner { addr: String, lottery_id: u64 },
 }
