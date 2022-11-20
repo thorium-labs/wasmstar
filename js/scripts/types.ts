@@ -1,19 +1,22 @@
 import tsGenerator from "@cosmwasm/ts-codegen";
 import { join } from "path";
 
-const contractsPath = (path?: string) => join(__dirname, "../src/");
-const outPath = join(__dirname, "./interfaces");
+const dir = join(__dirname, "../../schema");
+const outPath = join(__dirname, "../types");
 
 tsGenerator({
   contracts: [
     {
       name: "super_star",
-      dir: contractsPath(),
+      dir,
     },
   ],
   outPath,
   options: {
     bundle: {
+      enabled: false,
+    },
+    client: {
       enabled: false,
     },
   },
