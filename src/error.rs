@@ -15,6 +15,9 @@ pub enum ContractError {
     #[error("InvalidPriceTicket")]
     InvalidPriceTicket,
 
+    #[error("InvalidDenom")]
+    InvalidDenom,
+
     #[error("TicketBoughtExceeded")]
     TicketBoughtExceeded,
 
@@ -24,8 +27,8 @@ pub enum ContractError {
     #[error("LotteryStillOpen")]
     LotteryStillOpen,
 
-    #[error("InvalidTicketLength")]
-    InvalidTicketLength,
+    #[error("InvalidTicket")]
+    InvalidTicket,
 
     #[error("Invalid Amount")]
     InvalidAmount,

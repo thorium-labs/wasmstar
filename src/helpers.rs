@@ -1,4 +1,4 @@
-use cosmwasm_std::{coin, Coin, Decimal, DepsMut, Env, StdError, StdResult, Uint128};
+use cosmwasm_std::{coin, Addr, Coin, Decimal, DepsMut, Env, StdResult, Uint128};
 use cw_utils::Expiration;
 use std::ops::{Add, Mul};
 
@@ -6,8 +6,17 @@ use crate::error::ContractError;
 use crate::state::{Lottery, Status, TicketResult, CONFIG, LOTTERIES, TOTAL_LOTTERIES};
 
 pub fn ensure_ticket_is_valid(ticket: &String) -> Result<(), ContractError> {
-    if ticket.len() != 6 {
-        return Err(ContractError::InvalidTicketLength);
+    if ticket.len().ne(&6) {
+        return Err(ContractError::InvalidTicket);
+    }
+
+    let in_range = 0..=999999;
+    let ticket_number = ticket
+        .parse::<u64>()
+        .map_err(|_| ContractError::InvalidTicket)?;
+
+    if !in_range.contains(&ticket_number) {
+        return Err(ContractError::InvalidTicket);
     }
 
     Ok(())
@@ -21,11 +30,7 @@ pub fn ensure_is_enough_funds_to_cover_tickets(
     let fund = sent_fund
         .iter()
         .find(|c| c.denom == required_funds.denom)
-        .ok_or_else(|| {
-            ContractError::Std(StdError::GenericErr {
-                msg: format!("Expected denom fee: {}", required_funds.denom),
-            })
-        })?;
+        .ok_or(ContractError::InvalidDenom)?;
 
     if fund.amount < required_funds.amount {
         return Err(ContractError::InvalidAmount);
@@ -43,6 +48,7 @@ pub fn create_next_lottery(deps: DepsMut, env: Env) -> StdResult<()> {
         .add(config.interval)
         .expect("error defining end_time");
 
+    // Add funds previus lottery
     let lottery = Lottery {
         id: lottery_id,
         status: Status::Open,
@@ -76,49 +82,52 @@ pub fn calculate_tickets_prize(
     winners_per_match: [u64; 6],
     denom: String,
 ) -> Coin {
-    let mut prize = Uint128::zero();
-
-    for ticket in tickets {
-        if ticket.matches > 0 {
-            let index = ticket.matches as usize - 1;
+    let prize = tickets.iter().fold(Uint128::zero(), |mut acc, t| {
+        if t.matches > 0 {
+            let index = t.matches as usize - 1;
             let ticket_prize = prize_per_match[index]
                 .checked_div(winners_per_match[index].into())
                 .expect("error calculating ticket prize");
-            prize += ticket_prize;
+            acc = acc
+                .checked_add(ticket_prize)
+                .expect("error calculating ticket prize")
         }
-    }
+        acc
+    });
 
     coin(prize.u128(), denom)
 }
 
 pub fn calculate_winner_per_match(
-    tickets: impl Iterator<Item = String>,
+    tickets: Vec<(Addr, Vec<String>)>,
     winning_ticket: String,
 ) -> [u64; 6] {
     tickets
-        .map(|t| -> u64 {
-            t.chars()
-                .zip(winning_ticket.chars())
-                .filter_map(|(a, b)| (a == b).then_some(true))
-                .count() as u64
-        })
-        .fold([0; 6], |mut acc, n| {
-            if n > 0 {
-                acc[n as usize - 1] += 1;
-            }
+        .iter()
+        .fold([0, 0, 0, 0, 0, 0], |mut acc, (_, utickets)| {
+            utickets.iter().for_each(|t| {
+                let matches = calculate_matches(t, &winning_ticket);
+                if matches > 0 {
+                    acc[matches as usize - 1] += 1;
+                }
+            });
             acc
         })
+}
+
+pub fn calculate_matches(winning_ticket: &str, ticket: &str) -> u8 {
+    ticket
+        .chars()
+        .zip(winning_ticket.chars())
+        .filter(|(a, b)| a == b)
+        .count() as u8
 }
 
 pub fn check_tickets(tickets: Vec<String>, winning_ticket: String) -> Vec<TicketResult> {
     tickets
         .iter()
         .map(|t| -> TicketResult {
-            let matches = t
-                .chars()
-                .zip(winning_ticket.chars())
-                .filter_map(|(a, b)| Some(a == b))
-                .count() as u8;
+            let matches = calculate_matches(t, &winning_ticket);
             TicketResult {
                 ticket_number: t.clone(),
                 matches,

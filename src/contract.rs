@@ -2,7 +2,7 @@
 use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
-    coin, ensure_eq, to_binary, wasm_execute, BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env,
+    coin, ensure_eq, to_binary, wasm_execute, Addr, BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env,
     MessageInfo, Order, Response, StdResult,
 };
 use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
@@ -229,28 +229,27 @@ pub fn random_callback(
         .to_array()
         .map_err(|_| ContractError::InvalidRandomness)?;
 
-    let [r_1, r_2, r_3, r_4, r_5, r_6] = ints_in_range(randomness, 0..=9);
+    let result: [u8; 6] = ints_in_range(randomness, 0..=9);
 
-    let winner_number = format!("{}{}{}{}{}{}", r_1, r_2, r_3, r_4, r_5, r_6);
+    let winner_number = result
+        .into_iter()
+        .fold(String::new(), |acc, x| acc + &x.to_string());
 
     let lottery_id = callback
         .job_id
         .parse::<u64>()
         .expect("error parsing job_id");
 
-    let tickets = TICKETS
+    let purchases = TICKETS
         .prefix(lottery_id)
         .range(deps.storage, None, None, Order::Ascending)
-        .map(|f| Ok(f?.1))
-        .collect::<StdResult<Vec<Vec<String>>>>()?
-        .into_iter()
-        .flatten();
+        .collect::<StdResult<Vec<(Addr, Vec<String>)>>>()?;
 
     let mut lottery = LOTTERIES.load(deps.storage, lottery_id)?;
 
     lottery.winner_number = Some(winner_number.clone());
     lottery.status = Status::Claimable;
-    lottery.winners_per_match = Some(calculate_winner_per_match(tickets, winner_number));
+    lottery.winners_per_match = Some(calculate_winner_per_match(purchases, winner_number));
 
     LOTTERIES.save(deps.storage, lottery_id, &lottery)?;
 

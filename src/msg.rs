@@ -30,6 +30,7 @@ pub enum ExecuteMsg {
     Receive {
         callback: NoisCallback,
     },
+    // Update Config
 }
 
 #[cw_serde]
