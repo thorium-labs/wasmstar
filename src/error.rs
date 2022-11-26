@@ -18,8 +18,8 @@ pub enum ContractError {
     #[error("InvalidDenom")]
     InvalidDenom,
 
-    #[error("TicketBoughtExceeded")]
-    TicketBoughtExceeded,
+    #[error("MaxTicketsPerUserExceeded")]
+    MaxTicketsPerUserExceeded,
 
     #[error("LotteryIsNotOpen")]
     LotteryIsNotOpen,

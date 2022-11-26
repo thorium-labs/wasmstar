@@ -18,7 +18,7 @@ pub struct Config {
     pub ticket_price: Coin,
     pub nois_proxy: Addr,
     pub percentage_per_match: [u8; 6],
-    pub max_tickets_per_user: u64,
+    pub max_tickets_per_user: u32,
 }
 
 #[cw_serde]

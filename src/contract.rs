@@ -97,10 +97,10 @@ pub fn buy_tickets(
         .may_load(deps.storage, (lottery_id, info.sender.clone()))?
         .unwrap_or_default();
 
-    let n_tickets = tickets.len() as u64;
+    let n_tickets = tickets.len() as u32;
 
-    if n_tickets.add(tickets_bought.len() as u64) > config.max_tickets_per_user {
-        return Err(ContractError::TicketBoughtExceeded);
+    if n_tickets.add(tickets_bought.len() as u32) > config.max_tickets_per_user {
+        return Err(ContractError::MaxTicketsPerUserExceeded);
     }
 
     tickets.iter().try_for_each(ensure_ticket_is_valid)?;
@@ -194,7 +194,7 @@ pub fn execute_lottery(
 ) -> Result<Response, ContractError> {
     let mut lottery = LOTTERIES.load(deps.storage, lottery_id.clone())?;
 
-    if !lottery.end_time.is_expired(&env.block) && lottery.status == Status::Open {
+    if !lottery.end_time.is_expired(&env.block) {
         return Err(ContractError::LotteryStillOpen);
     }
 
@@ -247,9 +247,11 @@ pub fn random_callback(
 
     let mut lottery = LOTTERIES.load(deps.storage, lottery_id)?;
 
+    let winners_per_match = calculate_winner_per_match(purchases, winner_number.clone());
+
     lottery.winner_number = Some(winner_number.clone());
     lottery.status = Status::Claimable;
-    lottery.winners_per_match = Some(calculate_winner_per_match(purchases, winner_number));
+    lottery.winners_per_match = Some(winners_per_match);
 
     LOTTERIES.save(deps.storage, lottery_id, &lottery)?;
 
@@ -264,6 +266,10 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::CheckWinner { addr, lottery_id } => {
             to_binary(&check_winner(deps, addr, lottery_id)?)
         }
+        QueryMsg::GetTickets { addr, lottery_id } => {
+            to_binary(&get_tickets(deps, lottery_id, addr)?)
+        }
+        QueryMsg::GetConfig {} => to_binary(&get_config(deps)?),
     }
 }
 
@@ -273,6 +279,19 @@ pub fn get_current_lottery(deps: Deps) -> StdResult<Lottery> {
 
 pub fn get_lottery(deps: Deps, lottery_id: u64) -> StdResult<Option<Lottery>> {
     Ok(LOTTERIES.may_load(deps.storage, lottery_id)?)
+}
+
+pub fn get_tickets(deps: Deps, lottery_id: u64, addr: String) -> StdResult<Vec<String>> {
+    Ok(TICKETS
+        .may_load(
+            deps.storage,
+            (lottery_id, deps.api.addr_validate(addr.as_str())?),
+        )?
+        .unwrap_or_default())
+}
+
+pub fn get_config(deps: Deps) -> StdResult<Config> {
+    Ok(CONFIG.load(deps.storage)?)
 }
 
 pub fn check_winner(deps: Deps, addr: String, lottery_id: u64) -> StdResult<Vec<TicketResult>> {

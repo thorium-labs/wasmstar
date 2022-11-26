@@ -3,7 +3,7 @@ use cosmwasm_std::Coin;
 use cw_utils::Duration;
 use nois::NoisCallback;
 
-use crate::state::{Lottery, TicketResult};
+use crate::state::{Config, Lottery, TicketResult};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -11,7 +11,7 @@ pub struct InstantiateMsg {
     pub ticket_price: Coin,
     pub lottery_interval: Duration,
     pub nois_proxy: String,
-    pub max_tickets_per_user: u64,
+    pub max_tickets_per_user: u32,
     pub percentage_per_match: [u8; 6],
 }
 
@@ -42,4 +42,8 @@ pub enum QueryMsg {
     GetCurrentLottery {},
     #[returns(Vec<TicketResult>)]
     CheckWinner { addr: String, lottery_id: u64 },
+    #[returns(Vec<String>)]
+    GetTickets { addr: String, lottery_id: u64 },
+    #[returns(Config)]
+    GetConfig {},
 }
