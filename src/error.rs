@@ -41,4 +41,7 @@ pub enum ContractError {
 
     #[error("DrawIsNotClaimable")]
     DrawIsNotClaimable,
+
+    #[error("NoPrizeToClaim")]
+    NoPrizeToClaim,
 }

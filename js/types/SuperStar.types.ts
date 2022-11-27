@@ -11,7 +11,7 @@ export type Duration = {
 };
 export type Uint128 = string;
 export interface InstantiateMsg {
-  lottery_interval: Duration;
+  draw_interval: Duration;
   max_tickets_per_user: number;
   nois_proxy: string;
   percentage_per_match: [number, number, number, number, number, number];
@@ -25,15 +25,15 @@ export interface Coin {
 }
 export type ExecuteMsg = {
   buy_ticket: {
-    lottery_id: number;
+    draw_id: number;
     tickets: string[];
   };
 } | {
-  claim_lottery: {
-    id: number;
+  claim_prize: {
+    draw_id: number;
   };
 } | {
-  execute_lottery: {
+  execute_draw: {
     id: number;
   };
 } | {
@@ -59,20 +59,20 @@ export interface UpdateConfigMsg {
   treasury_fee?: number | null;
 }
 export type QueryMsg = {
-  get_lottery: {
+  get_draw: {
     id: number;
   };
 } | {
-  get_current_lottery: {};
+  get_current_draw: {};
 } | {
   check_winner: {
     addr: string;
-    lottery_id: number;
+    draw_id: number;
   };
 } | {
   get_tickets: {
     addr: string;
-    lottery_id: number;
+    draw_id: number;
   };
 } | {
   get_config: {};
@@ -104,7 +104,7 @@ export type Expiration = {
 export type Timestamp = Uint64;
 export type Uint64 = string;
 export type Status = "open" | "pending" | "claimable";
-export interface Lottery {
+export interface Draw {
   end_time: Expiration;
   id: number;
   prize_per_match?: [Uint128, Uint128, Uint128, Uint128, Uint128, Uint128] | null;
@@ -115,4 +115,5 @@ export interface Lottery {
   winner_number?: string | null;
   winners_per_match?: [number, number, number, number, number, number] | null;
 }
+export type NullableDraw = Draw | null;
 export type ArrayOfString = string[];

@@ -136,14 +136,6 @@ pub fn claim_prize(
     info: MessageInfo,
     draw_id: u64,
 ) -> Result<Response, ContractError> {
-    // TODO: Remove winners and use indexer
-    if WINNERS
-        .may_load(deps.storage, (draw_id, info.sender.clone()))?
-        .is_some()
-    {
-        return Err(ContractError::AlreadyClaimed);
-    }
-
     let draw = DRAWS.load(deps.storage, draw_id)?;
 
     if draw.status != Status::Claimable {
@@ -159,11 +151,21 @@ pub fn claim_prize(
 
     let prize = calculate_tickets_prize(
         t_result,
-        draw.prize_per_match.expect("prize per match is not set"),
-        draw.winners_per_match
-            .expect("winners per match is not set"),
+        draw.prize_per_match.unwrap_or_default(),
+        draw.winners_per_match.unwrap_or_default(),
         draw.ticket_price.clone().denom,
     );
+
+    if prize.amount.is_zero() {
+        return Err(ContractError::NoPrizeToClaim);
+    }
+
+    if WINNERS
+        .may_load(deps.storage, (draw_id, info.sender.clone()))?
+        .is_some()
+    {
+        return Err(ContractError::AlreadyClaimed);
+    }
 
     WINNERS.save(
         deps.storage,

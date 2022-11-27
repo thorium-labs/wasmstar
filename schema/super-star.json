@@ -7,7 +7,7 @@
     "title": "InstantiateMsg",
     "type": "object",
     "required": [
-      "lottery_interval",
+      "draw_interval",
       "max_tickets_per_user",
       "nois_proxy",
       "percentage_per_match",
@@ -15,7 +15,7 @@
       "treasury_fee"
     ],
     "properties": {
-      "lottery_interval": {
+      "draw_interval": {
         "$ref": "#/definitions/Duration"
       },
       "max_tickets_per_user": {
@@ -115,11 +115,11 @@
           "buy_ticket": {
             "type": "object",
             "required": [
-              "lottery_id",
+              "draw_id",
               "tickets"
             ],
             "properties": {
-              "lottery_id": {
+              "draw_id": {
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
@@ -139,16 +139,16 @@
       {
         "type": "object",
         "required": [
-          "claim_lottery"
+          "claim_prize"
         ],
         "properties": {
-          "claim_lottery": {
+          "claim_prize": {
             "type": "object",
             "required": [
-              "id"
+              "draw_id"
             ],
             "properties": {
-              "id": {
+              "draw_id": {
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
@@ -162,10 +162,10 @@
       {
         "type": "object",
         "required": [
-          "execute_lottery"
+          "execute_draw"
         ],
         "properties": {
-          "execute_lottery": {
+          "execute_draw": {
             "type": "object",
             "required": [
               "id"
@@ -371,10 +371,10 @@
       {
         "type": "object",
         "required": [
-          "get_lottery"
+          "get_draw"
         ],
         "properties": {
-          "get_lottery": {
+          "get_draw": {
             "type": "object",
             "required": [
               "id"
@@ -394,10 +394,10 @@
       {
         "type": "object",
         "required": [
-          "get_current_lottery"
+          "get_current_draw"
         ],
         "properties": {
-          "get_current_lottery": {
+          "get_current_draw": {
             "type": "object",
             "additionalProperties": false
           }
@@ -414,13 +414,13 @@
             "type": "object",
             "required": [
               "addr",
-              "lottery_id"
+              "draw_id"
             ],
             "properties": {
               "addr": {
                 "type": "string"
               },
-              "lottery_id": {
+              "draw_id": {
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
@@ -441,13 +441,13 @@
             "type": "object",
             "required": [
               "addr",
-              "lottery_id"
+              "draw_id"
             ],
             "properties": {
               "addr": {
                 "type": "string"
               },
-              "lottery_id": {
+              "draw_id": {
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
@@ -624,9 +624,9 @@
         }
       }
     },
-    "get_current_lottery": {
+    "get_current_draw": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Lottery",
+      "title": "Draw",
       "type": "object",
       "required": [
         "end_time",
@@ -780,73 +780,17 @@
         }
       }
     },
-    "get_lottery": {
+    "get_draw": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Lottery",
-      "type": "object",
-      "required": [
-        "end_time",
-        "id",
-        "status",
-        "ticket_price",
-        "total_prize",
-        "total_tickets"
-      ],
-      "properties": {
-        "end_time": {
-          "$ref": "#/definitions/Expiration"
+      "title": "Nullable_Draw",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Draw"
         },
-        "id": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "prize_per_match": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "$ref": "#/definitions/Uint128"
-          },
-          "maxItems": 6,
-          "minItems": 6
-        },
-        "status": {
-          "$ref": "#/definitions/Status"
-        },
-        "ticket_price": {
-          "$ref": "#/definitions/Coin"
-        },
-        "total_prize": {
-          "$ref": "#/definitions/Coin"
-        },
-        "total_tickets": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "winner_number": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "winners_per_match": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
-          },
-          "maxItems": 6,
-          "minItems": 6
+        {
+          "type": "null"
         }
-      },
-      "additionalProperties": false,
+      ],
       "definitions": {
         "Coin": {
           "type": "object",
@@ -862,6 +806,72 @@
               "type": "string"
             }
           }
+        },
+        "Draw": {
+          "type": "object",
+          "required": [
+            "end_time",
+            "id",
+            "status",
+            "ticket_price",
+            "total_prize",
+            "total_tickets"
+          ],
+          "properties": {
+            "end_time": {
+              "$ref": "#/definitions/Expiration"
+            },
+            "id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "prize_per_match": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/definitions/Uint128"
+              },
+              "maxItems": 6,
+              "minItems": 6
+            },
+            "status": {
+              "$ref": "#/definitions/Status"
+            },
+            "ticket_price": {
+              "$ref": "#/definitions/Coin"
+            },
+            "total_prize": {
+              "$ref": "#/definitions/Coin"
+            },
+            "total_tickets": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "winner_number": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "winners_per_match": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "maxItems": 6,
+              "minItems": 6
+            }
+          },
+          "additionalProperties": false
         },
         "Expiration": {
           "description": "Expiration represents a point in time when some event happens. It can compare with a BlockInfo and will return is_expired() == true once the condition is hit (and for every block in the future)",
