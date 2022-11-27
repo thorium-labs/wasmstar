@@ -21,11 +21,11 @@ pub enum ContractError {
     #[error("MaxTicketsPerUserExceeded")]
     MaxTicketsPerUserExceeded,
 
-    #[error("LotteryIsNotOpen")]
-    LotteryIsNotOpen,
+    #[error("DrawIsNotOpen")]
+    DrawIsNotOpen,
 
-    #[error("LotteryStillOpen")]
-    LotteryStillOpen,
+    #[error("DrawStillOpen")]
+    DrawStillOpen,
 
     #[error("InvalidTicket")]
     InvalidTicket,
@@ -39,6 +39,6 @@ pub enum ContractError {
     #[error("AlreadyClaimed")]
     AlreadyClaimed,
 
-    #[error("LotteryIsNotClaimable")]
-    LotteryIsNotClaimable,
+    #[error("DrawIsNotClaimable")]
+    DrawIsNotClaimable,
 }

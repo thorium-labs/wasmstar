@@ -3,13 +3,13 @@ use cosmwasm_std::Coin;
 use cw_utils::Duration;
 use nois::NoisCallback;
 
-use crate::state::{Config, Lottery, TicketResult};
+use crate::state::{Config, Draw, TicketResult};
 
 #[cw_serde]
 pub struct InstantiateMsg {
     pub treasury_fee: u8,
     pub ticket_price: Coin,
-    pub lottery_interval: Duration,
+    pub draw_interval: Duration,
     pub nois_proxy: String,
     pub max_tickets_per_user: u32,
     pub percentage_per_match: [u8; 6],
@@ -17,36 +17,25 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    BuyTicket {
-        tickets: Vec<String>,
-        lottery_id: u64,
-    },
-    ClaimLottery {
-        id: u64,
-    },
-    ExecuteLottery {
-        id: u64,
-    },
-    Receive {
-        callback: NoisCallback,
-    },
-    UpdateConfig {
-        new_config: UpdateConfigMsg,
-    },
+    BuyTicket { tickets: Vec<String>, draw_id: u64 },
+    ClaimPrize { draw_id: u64 },
+    ExecuteDraw { id: u64 },
+    Receive { callback: NoisCallback },
+    UpdateConfig { new_config: UpdateConfigMsg },
     // Staking Executions
 }
 
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(Lottery)]
-    GetLottery { id: u64 },
-    #[returns(Lottery)]
-    GetCurrentLottery {},
+    #[returns(Option<Draw>)]
+    GetDraw { id: u64 },
+    #[returns(Draw)]
+    GetCurrentDraw {},
     #[returns(Vec<TicketResult>)]
-    CheckWinner { addr: String, lottery_id: u64 },
+    CheckWinner { addr: String, draw_id: u64 },
     #[returns(Vec<String>)]
-    GetTickets { addr: String, lottery_id: u64 },
+    GetTickets { addr: String, draw_id: u64 },
     #[returns(Config)]
     GetConfig {},
 }

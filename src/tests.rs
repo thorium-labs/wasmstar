@@ -8,12 +8,12 @@ use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
 
 use crate::{
     contract::{
-        buy_tickets, execute_lottery, get_config, get_current_lottery, get_lottery, get_tickets,
-        instantiate, random_callback,
+        buy_tickets, execute_draw, get_config, get_current_draw, get_draw, get_tickets,
+        instantiate, receive_randomness,
     },
     error::ContractError,
-    helpers::calculate_prize_distribution,
-    state::{Lottery, LOTTERIES},
+    helpers::{calculate_prize_distribution, create_next_draw},
+    state::{Draw, DRAWS},
 };
 use crate::{msg::InstantiateMsg, state::Status};
 
@@ -30,7 +30,7 @@ fn do_instantaite() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     let env = mock_env();
 
     let instantiate_msg = InstantiateMsg {
-        lottery_interval: Duration::Time(60),
+        draw_interval: Duration::Time(60),
         max_tickets_per_user: MAX_TICKETS,
         nois_proxy: NOIS_ADDR.to_string(),
         percentage_per_match: [3, 6, 8, 15, 25, 40],
@@ -44,14 +44,14 @@ fn do_instantaite() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
 }
 
 #[test]
-fn cannot_buy_tickets_when_lottery_is_not_open() {
+fn cannot_buy_tickets_when_draw_is_not_open() {
     let mut deps = do_instantaite();
 
-    LOTTERIES
-        .update(deps.as_mut().storage, 1, |l| -> StdResult<Lottery> {
-            let mut lottery = l.unwrap();
-            lottery.status = Status::Claimable;
-            Ok(lottery)
+    DRAWS
+        .update(deps.as_mut().storage, 1, |d| -> StdResult<Draw> {
+            let mut draw = d.unwrap();
+            draw.status = Status::Claimable;
+            Ok(draw)
         })
         .unwrap();
 
@@ -64,18 +64,18 @@ fn cannot_buy_tickets_when_lottery_is_not_open() {
     )
     .unwrap_err();
 
-    assert_eq!(err, ContractError::LotteryIsNotOpen);
+    assert_eq!(err, ContractError::DrawIsNotOpen);
 }
 
 #[test]
-fn cannot_buy_tickets_when_lottery_is_expired() {
+fn cannot_buy_tickets_when_draw_is_expired() {
     let mut deps = do_instantaite();
 
-    LOTTERIES
-        .update(deps.as_mut().storage, 1, |l| -> StdResult<Lottery> {
-            let mut lottery = l.unwrap();
-            lottery.end_time = Expiration::AtTime(Timestamp::from_seconds(0));
-            Ok(lottery)
+    DRAWS
+        .update(deps.as_mut().storage, 1, |d| -> StdResult<Draw> {
+            let mut draw = d.unwrap();
+            draw.end_time = Expiration::AtTime(Timestamp::from_seconds(0));
+            Ok(draw)
         })
         .unwrap();
 
@@ -88,7 +88,7 @@ fn cannot_buy_tickets_when_lottery_is_expired() {
     )
     .unwrap_err();
 
-    assert_eq!(err, ContractError::LotteryIsNotOpen);
+    assert_eq!(err, ContractError::DrawIsNotOpen);
 }
 
 #[test]
@@ -185,11 +185,11 @@ fn once_purchased_ticktes_it_should_update_prizes() {
     let mut deps = do_instantaite();
     let tickets = vec!["123456".to_string()];
 
-    let lottery = get_current_lottery(deps.as_ref()).unwrap();
+    let draw = get_current_draw(deps.as_ref()).unwrap();
 
-    assert_eq!(lottery.prize_per_match, None);
-    assert_eq!(lottery.total_tickets, 0);
-    assert_eq!(lottery.total_prize.amount, Uint128::zero());
+    assert_eq!(draw.prize_per_match, None);
+    assert_eq!(draw.total_tickets, 0);
+    assert_eq!(draw.total_prize.amount, Uint128::zero());
 
     buy_tickets(
         deps.as_mut(),
@@ -200,27 +200,25 @@ fn once_purchased_ticktes_it_should_update_prizes() {
     )
     .unwrap();
 
-    let lottery = get_current_lottery(deps.as_ref()).unwrap();
+    let draw = get_current_draw(deps.as_ref()).unwrap();
     let config = get_config(deps.as_ref()).unwrap();
 
-    let expected_prize_per_match = calculate_prize_distribution(
-        lottery.total_prize.amount.clone(),
-        config.percentage_per_match,
-    );
+    let expected_prize_per_match =
+        calculate_prize_distribution(draw.total_prize.amount.clone(), config.percentage_per_match);
 
-    assert_eq!(lottery.total_tickets, 1);
+    assert_eq!(draw.total_tickets, 1);
     assert_eq!(
-        lottery.total_prize.amount,
+        draw.total_prize.amount,
         Uint128::from(TICKET_PRICE * tickets.len() as u128)
     );
-    assert_eq!(lottery.prize_per_match, Some(expected_prize_per_match))
+    assert_eq!(draw.prize_per_match, Some(expected_prize_per_match))
 }
 
 #[test]
-fn cannot_execute_lottery_if_is_not_expired() {
+fn cannot_execute_draw_if_is_not_expired() {
     let mut deps = do_instantaite();
 
-    let err = execute_lottery(
+    let err = execute_draw(
         deps.as_mut(),
         mock_env(),
         mock_info(PARTICIPANT_ADDR, &[]),
@@ -228,21 +226,21 @@ fn cannot_execute_lottery_if_is_not_expired() {
     )
     .unwrap_err();
 
-    assert_eq!(err, ContractError::LotteryStillOpen);
+    assert_eq!(err, ContractError::DrawStillOpen);
 }
 
 #[test]
-fn execute_lottery_should_work() {
+fn execute_draw_should_work() {
     let mut deps = do_instantaite();
-    LOTTERIES
-        .update(deps.as_mut().storage, 1, |l| -> StdResult<Lottery> {
-            let mut lottery = l.unwrap();
-            lottery.end_time = Expiration::AtTime(Timestamp::from_seconds(0));
-            Ok(lottery)
+    DRAWS
+        .update(deps.as_mut().storage, 1, |d| -> StdResult<Draw> {
+            let mut draw = d.unwrap();
+            draw.end_time = Expiration::AtTime(Timestamp::from_seconds(0));
+            Ok(draw)
         })
         .unwrap();
 
-    let resp = execute_lottery(
+    let resp = execute_draw(
         deps.as_mut(),
         mock_env(),
         mock_info(PARTICIPANT_ADDR, &[]),
@@ -264,20 +262,20 @@ fn execute_lottery_should_work() {
         })
     );
 
-    let lottery = get_lottery(deps.as_ref(), 1).unwrap().unwrap();
+    let draw = get_draw(deps.as_ref(), 1).unwrap().unwrap();
 
-    assert_eq!(lottery.status, Status::Pending);
+    assert_eq!(draw.status, Status::Pending);
 }
 
 #[test]
-fn only_nois_can_execute_random_callback() {
+fn only_nois_can_execute_receive_randomness() {
     let mut deps = do_instantaite();
     let randomness = HexBinary::from(vec![
         88, 85, 86, 91, 61, 64, 60, 71, 234, 24, 246, 200, 35, 73, 38, 187, 54, 59, 96, 9, 237, 27,
         215, 103, 148, 230, 28, 48, 51, 114, 203, 219,
     ]);
 
-    let err = random_callback(
+    let err = receive_randomness(
         deps.as_mut(),
         mock_info(PARTICIPANT_ADDR, &[]),
         NoisCallback {
@@ -291,7 +289,7 @@ fn only_nois_can_execute_random_callback() {
 }
 
 #[test]
-fn execute_random_callback_should_work() {
+fn execute_receive_randomness_should_work() {
     let mut deps = do_instantaite();
     let randomness = HexBinary::from(vec![
         88, 85, 86, 91, 61, 64, 60, 71, 234, 24, 246, 200, 35, 73, 38, 187, 54, 59, 96, 9, 237, 27,
@@ -314,7 +312,9 @@ fn execute_random_callback_should_work() {
     )
     .unwrap();
 
-    random_callback(
+    create_next_draw(deps.as_mut(), mock_env()).unwrap();
+
+    receive_randomness(
         deps.as_mut(),
         mock_info("nois", &[]),
         NoisCallback {
@@ -324,13 +324,13 @@ fn execute_random_callback_should_work() {
     )
     .unwrap();
 
-    let lottery = get_lottery(deps.as_ref(), 1).unwrap().unwrap();
+    let draw = get_draw(deps.as_ref(), 1).unwrap().unwrap();
 
-    assert_eq!(lottery.status, Status::Claimable);
-    assert_eq!(lottery.winner_number, Some(winner_number));
-    assert_eq!(lottery.total_tickets, 1);
+    assert_eq!(draw.status, Status::Claimable);
+    assert_eq!(draw.winner_number, Some(winner_number));
+    assert_eq!(draw.total_tickets, 1);
     assert_eq!(
-        lottery.total_prize,
+        draw.total_prize,
         coin(TICKET_PRICE * tickets.len() as u128, DENOM)
     );
 }

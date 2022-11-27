@@ -22,7 +22,7 @@ pub struct Config {
 }
 
 #[cw_serde]
-pub struct Lottery {
+pub struct Draw {
     pub id: u64,
     pub status: Status,
     pub end_time: Expiration,
@@ -34,9 +34,9 @@ pub struct Lottery {
     pub winners_per_match: Option<[u64; 6]>,
 }
 
-impl Lottery {
+impl Draw {
     pub fn new(id: u64, end_time: Expiration, ticket_price: Coin) -> Self {
-        return Lottery {
+        return Draw {
             id,
             status: Status::Open,
             end_time,
@@ -57,7 +57,7 @@ pub struct TicketResult {
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");
-pub const TOTAL_LOTTERIES: Item<u64> = Item::new("total_lotteries");
-pub const LOTTERIES: Map<u64, Lottery> = Map::new("lotteries");
+pub const DRAWS_INDEX: Item<u64> = Item::new("draws_index");
+pub const DRAWS: Map<u64, Draw> = Map::new("draws");
 pub const WINNERS: Map<(u64, Addr), Coin> = Map::new("winners");
 pub const TICKETS: Map<(u64, Addr), Vec<String>> = Map::new("tickets");

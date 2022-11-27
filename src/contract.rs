@@ -2,23 +2,23 @@
 use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
-    coin, ensure_eq, to_binary, wasm_execute, Addr, BankMsg, Binary, CosmosMsg, Decimal, Deps,
-    DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128,
+    coin, ensure_eq, to_binary, wasm_execute, Addr, BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env,
+    MessageInfo, Order, Response, StdResult, Uint128,
 };
 use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Mul};
 
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::helpers::{
     calculate_prize_distribution, calculate_tickets_prize, calculate_winner_per_match,
-    check_tickets, create_next_lottery, ensure_is_enough_funds_to_cover_tickets,
-    ensure_ticket_is_valid,
+    check_tickets, create_next_draw, ensure_is_enough_funds_to_cover_tickets,
+    ensure_ticket_is_valid, increase_prize_with_accumulative_pot,
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UpdateConfigMsg};
 use crate::state::{
-    Config, Lottery, Status, TicketResult, CONFIG, LOTTERIES, TICKETS, TOTAL_LOTTERIES, WINNERS,
+    Config, Draw, Status, TicketResult, CONFIG, DRAWS, DRAWS_INDEX, TICKETS, WINNERS,
 };
 
 const CONTRACT_NAME: &str = "crates.io:super-star";
@@ -44,7 +44,7 @@ pub fn instantiate(
 
     let config = Config {
         owner: deps.api.addr_canonicalize(&info.sender.as_str())?,
-        interval: msg.lottery_interval,
+        interval: msg.draw_interval,
         ticket_price: msg.ticket_price,
         nois_proxy: nois_proxy_addr,
         treasury_fee: msg.treasury_fee,
@@ -53,11 +53,11 @@ pub fn instantiate(
     };
 
     CONFIG.save(deps.storage, &config)?;
-    TOTAL_LOTTERIES.save(deps.storage, &0)?;
+    DRAWS_INDEX.save(deps.storage, &0)?;
 
-    create_next_lottery(deps, env)?;
+    create_next_draw(deps, env)?;
 
-    Ok(Response::default())
+    Ok(Response::new().add_attribute("action", "/superstar.v1.MsgInstantiateContract"))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -68,13 +68,12 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::BuyTicket {
-            tickets,
-            lottery_id,
-        } => buy_tickets(deps, env, info, tickets, lottery_id),
-        ExecuteMsg::ClaimLottery { id } => claim_lottery(deps, info, id),
-        ExecuteMsg::ExecuteLottery { id } => execute_lottery(deps, env, info, id),
-        ExecuteMsg::Receive { callback } => random_callback(deps, info, callback),
+        ExecuteMsg::BuyTicket { tickets, draw_id } => {
+            buy_tickets(deps, env, info, tickets, draw_id)
+        }
+        ExecuteMsg::ClaimPrize { draw_id } => claim_prize(deps, info, draw_id),
+        ExecuteMsg::ExecuteDraw { id } => execute_draw(deps, env, info, id),
+        ExecuteMsg::Receive { callback } => receive_randomness(deps, info, callback),
         ExecuteMsg::UpdateConfig { new_config } => update_config(deps, info, new_config),
     }
 }
@@ -84,18 +83,17 @@ pub fn buy_tickets(
     env: Env,
     info: MessageInfo,
     tickets: Vec<String>,
-    lottery_id: u64,
+    draw_id: u64,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
-    let current_lottery = TOTAL_LOTTERIES.load(deps.storage)?;
-    let mut lottery = LOTTERIES.load(deps.storage, current_lottery)?;
+    let mut draw = DRAWS.load(deps.storage, draw_id)?;
 
-    if lottery.status != Status::Open || lottery.end_time.is_expired(&env.block) {
-        return Err(ContractError::LotteryIsNotOpen);
+    if draw.status != Status::Open || draw.end_time.is_expired(&env.block) {
+        return Err(ContractError::DrawIsNotOpen);
     }
 
     let mut tickets_bought = TICKETS
-        .may_load(deps.storage, (lottery_id, info.sender.clone()))?
+        .may_load(deps.storage, (draw_id, info.sender.clone()))?
         .unwrap_or_default();
 
     let n_tickets = tickets.len() as u32;
@@ -115,66 +113,62 @@ pub fn buy_tickets(
 
     tickets_bought.extend(tickets);
 
-    TICKETS.save(
-        deps.storage,
-        (current_lottery, info.sender),
-        &tickets_bought,
-    )?;
+    TICKETS.save(deps.storage, (draw_id, info.sender), &tickets_bought)?;
 
-    lottery.total_tickets = lottery.total_tickets.add(u64::from(n_tickets));
-    lottery.total_prize.amount += required_funds.amount;
+    draw.total_tickets = draw.total_tickets.add(u64::from(n_tickets));
+    draw.total_prize.amount += required_funds.amount;
 
-    lottery.prize_per_match = Some(calculate_prize_distribution(
-        lottery.total_prize.amount.clone(),
+    draw.prize_per_match = Some(calculate_prize_distribution(
+        draw.total_prize.amount.clone(),
         config.percentage_per_match.clone(),
     ));
 
-    LOTTERIES.save(deps.storage, current_lottery, &lottery)?;
+    DRAWS.save(deps.storage, draw_id, &draw)?;
 
-    Ok(Response::default())
+    Ok(Response::new()
+        .add_attribute("action", "/superstar.v1.MsgBuyTickets")
+        .add_attribute("total_tickets", draw.total_tickets.to_string())
+        .add_attribute("total_prize", draw.total_prize.amount))
 }
 
-pub fn claim_lottery(
+pub fn claim_prize(
     deps: DepsMut,
     info: MessageInfo,
-    lottery_id: u64,
+    draw_id: u64,
 ) -> Result<Response, ContractError> {
     // TODO: Remove winners and use indexer
     if WINNERS
-        .may_load(deps.storage, (lottery_id, info.sender.clone()))?
+        .may_load(deps.storage, (draw_id, info.sender.clone()))?
         .is_some()
     {
         return Err(ContractError::AlreadyClaimed);
     }
 
-    let lottery = LOTTERIES.load(deps.storage, lottery_id)?;
+    let draw = DRAWS.load(deps.storage, draw_id)?;
 
-    if lottery.status != Status::Claimable {
-        return Err(ContractError::LotteryIsNotClaimable);
+    if draw.status != Status::Claimable {
+        return Err(ContractError::DrawIsNotClaimable);
     }
 
-    let tickets = TICKETS.load(deps.storage, (lottery_id, info.sender.clone()))?;
+    let tickets = TICKETS.load(deps.storage, (draw_id, info.sender.clone()))?;
 
     let t_result = check_tickets(
         tickets,
-        lottery
-            .winner_number
-            .ok_or(ContractError::InvalidRandomness)?,
+        draw.winner_number.ok_or(ContractError::InvalidRandomness)?,
     );
 
     let prize = calculate_tickets_prize(
         t_result,
-        lottery.prize_per_match.expect("prize per match is not set"),
-        lottery
-            .winners_per_match
+        draw.prize_per_match.expect("prize per match is not set"),
+        draw.winners_per_match
             .expect("winners per match is not set"),
-        lottery.ticket_price.clone().denom,
+        draw.ticket_price.clone().denom,
     );
 
     WINNERS.save(
         deps.storage,
-        (lottery_id, info.sender.clone()),
-        &lottery.ticket_price,
+        (draw_id, info.sender.clone()),
+        &draw.ticket_price,
     )?;
 
     Ok(Response::new()
@@ -182,22 +176,22 @@ pub fn claim_lottery(
             to_address: info.sender.to_string(),
             amount: vec![prize.clone()],
         }))
-        .add_attribute("action", "claim_lottery")
-        .add_attribute("lottery_id", lottery_id.to_string())
+        .add_attribute("action", "/superstar.v1.MsgClaimPrize")
+        .add_attribute("draw_id", draw_id.to_string())
         .add_attribute("winner", info.sender.to_string())
         .add_attribute("prize", prize.to_string()))
 }
 
-pub fn execute_lottery(
+pub fn execute_draw(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    lottery_id: u64,
+    id: u64,
 ) -> Result<Response, ContractError> {
-    let mut lottery = LOTTERIES.load(deps.storage, lottery_id.clone())?;
+    let mut draw = DRAWS.load(deps.storage, id.clone())?;
 
-    if !lottery.end_time.is_expired(&env.block) {
-        return Err(ContractError::LotteryStillOpen);
+    if !draw.end_time.is_expired(&env.block) {
+        return Err(ContractError::DrawStillOpen);
     }
 
     let config = CONFIG.load(deps.storage)?;
@@ -205,20 +199,24 @@ pub fn execute_lottery(
     let msg = wasm_execute(
         config.nois_proxy,
         &ProxyExecuteMsg::GetNextRandomness {
-            job_id: lottery_id.to_string(),
+            job_id: id.to_string(),
         },
         info.funds,
     )?;
 
-    lottery.status = Status::Pending;
+    draw.status = Status::Pending;
 
-    LOTTERIES.save(deps.storage, lottery_id, &lottery)?;
-    create_next_lottery(deps, env)?;
+    DRAWS.save(deps.storage, id, &draw)?;
+    create_next_draw(deps, env.clone())?;
 
-    Ok(Response::new().add_message(msg))
+    Ok(Response::new()
+        .add_message(msg)
+        .add_attribute("action", "/superstar.v1.MsgExecuteDraw")
+        .add_attribute("draw_id", id.to_string())
+        .add_attribute("executed_at", env.block.time.seconds().to_string()))
 }
 
-pub fn random_callback(
+pub fn receive_randomness(
     deps: DepsMut,
     info: MessageInfo,
     callback: NoisCallback,
@@ -237,43 +235,41 @@ pub fn random_callback(
         .into_iter()
         .fold(String::new(), |acc, x| acc + &x.to_string());
 
-    let lottery_id = callback
+    let draw_id = callback
         .job_id
         .parse::<u64>()
         .expect("error parsing job_id");
 
     let purchases = TICKETS
-        .prefix(lottery_id)
+        .prefix(draw_id)
         .range(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<Vec<(Addr, Vec<String>)>>>()?;
 
-    let mut lottery = LOTTERIES.load(deps.storage, lottery_id)?;
+    let mut draw = DRAWS.load(deps.storage, draw_id)?;
 
     let winners_per_match = calculate_winner_per_match(purchases, winner_number.clone());
 
-    lottery.winner_number = Some(winner_number.clone());
-    lottery.status = Status::Claimable;
-    lottery.winners_per_match = Some(winners_per_match.clone());
+    draw.winner_number = Some(winner_number.clone());
+    draw.status = Status::Claimable;
+    draw.winners_per_match = Some(winners_per_match.clone());
 
-    LOTTERIES.save(deps.storage, lottery_id, &lottery)?;
+    DRAWS.save(deps.storage, draw_id, &draw)?;
 
-    let config = CONFIG.load(deps.storage)?;
-    let mut current_lottery = LOTTERIES.load(deps.storage, lottery_id + 1)?;
-
-    let accumulative_pot = lottery
+    let accumulative_pot = draw
         .prize_per_match
         .unwrap()
         .iter()
         .fold(Uint128::zero(), |acc, x| acc.add(x.clone()));
 
-    let treasury_reward = accumulative_pot.mul(Decimal::percent(config.treasury_fee.into()));
+    increase_prize_with_accumulative_pot(deps, draw_id.add(1), accumulative_pot.clone())?;
 
-    current_lottery.total_prize.amount = current_lottery
-        .total_prize
-        .amount
-        .add(accumulative_pot.sub(treasury_reward));
-
-    Ok(Response::default())
+    Ok(Response::new()
+        .add_attribute("action", "/superstar.v1.MsgReceiveRandomness")
+        .add_attribute("draw_id", draw_id.to_string())
+        .add_attribute(
+            "winner_number",
+            draw.winner_number.unwrap_or_default().to_string(),
+        ))
 }
 
 pub fn update_config(
@@ -309,37 +305,33 @@ pub fn update_config(
 
     CONFIG.save(deps.storage, &current_config)?;
 
-    Ok(Response::default())
+    Ok(Response::new().add_attribute("action", "/superstar.v1.MsgUpdateConfig"))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::GetCurrentLottery {} => to_binary(&get_current_lottery(deps)?),
-        QueryMsg::GetLottery { id } => to_binary(&get_lottery(deps, id)?),
-        QueryMsg::CheckWinner { addr, lottery_id } => {
-            to_binary(&check_winner(deps, addr, lottery_id)?)
-        }
-        QueryMsg::GetTickets { addr, lottery_id } => {
-            to_binary(&get_tickets(deps, lottery_id, addr)?)
-        }
+        QueryMsg::GetCurrentDraw {} => to_binary(&get_current_draw(deps)?),
+        QueryMsg::GetDraw { id } => to_binary(&get_draw(deps, id)?),
+        QueryMsg::CheckWinner { addr, draw_id } => to_binary(&check_winner(deps, addr, draw_id)?),
+        QueryMsg::GetTickets { addr, draw_id } => to_binary(&get_tickets(deps, draw_id, addr)?),
         QueryMsg::GetConfig {} => to_binary(&get_config(deps)?),
     }
 }
 
-pub fn get_current_lottery(deps: Deps) -> StdResult<Lottery> {
-    Ok(LOTTERIES.load(deps.storage, TOTAL_LOTTERIES.load(deps.storage)?)?)
+pub fn get_current_draw(deps: Deps) -> StdResult<Draw> {
+    Ok(DRAWS.load(deps.storage, DRAWS_INDEX.load(deps.storage)?)?)
 }
 
-pub fn get_lottery(deps: Deps, lottery_id: u64) -> StdResult<Option<Lottery>> {
-    Ok(LOTTERIES.may_load(deps.storage, lottery_id)?)
+pub fn get_draw(deps: Deps, id: u64) -> StdResult<Option<Draw>> {
+    Ok(DRAWS.may_load(deps.storage, id)?)
 }
 
-pub fn get_tickets(deps: Deps, lottery_id: u64, addr: String) -> StdResult<Vec<String>> {
+pub fn get_tickets(deps: Deps, draw_id: u64, addr: String) -> StdResult<Vec<String>> {
     Ok(TICKETS
         .may_load(
             deps.storage,
-            (lottery_id, deps.api.addr_validate(addr.as_str())?),
+            (draw_id, deps.api.addr_validate(addr.as_str())?),
         )?
         .unwrap_or_default())
 }
@@ -348,12 +340,14 @@ pub fn get_config(deps: Deps) -> StdResult<Config> {
     Ok(CONFIG.load(deps.storage)?)
 }
 
-pub fn check_winner(deps: Deps, addr: String, lottery_id: u64) -> StdResult<Vec<TicketResult>> {
-    let verify_addr = deps.api.addr_validate(addr.as_str())?;
-    let lottery = LOTTERIES.load(deps.storage, lottery_id)?;
-    let tickets = TICKETS.load(deps.storage, (lottery_id, verify_addr))?;
+pub fn check_winner(deps: Deps, addr: String, draw_id: u64) -> StdResult<Vec<TicketResult>> {
+    let draw = DRAWS.load(deps.storage, draw_id)?;
+    let tickets = TICKETS.load(
+        deps.storage,
+        (draw_id, deps.api.addr_validate(addr.as_str())?),
+    )?;
 
-    if let Some(w_number) = lottery.winner_number {
+    if let Some(w_number) = draw.winner_number {
         Ok(check_tickets(tickets, w_number))
     } else {
         Ok(vec![])

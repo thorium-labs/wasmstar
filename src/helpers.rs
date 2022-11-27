@@ -1,9 +1,9 @@
 use cosmwasm_std::{coin, Addr, Coin, Decimal, DepsMut, Env, StdResult, Uint128};
 use cw_utils::Expiration;
-use std::ops::{Add, Mul};
+use std::ops::{Add, Mul, Sub};
 
 use crate::error::ContractError;
-use crate::state::{Lottery, Status, TicketResult, CONFIG, LOTTERIES, TOTAL_LOTTERIES};
+use crate::state::{Draw, TicketResult, CONFIG, DRAWS, DRAWS_INDEX};
 
 pub fn ensure_ticket_is_valid(ticket: &String) -> Result<(), ContractError> {
     if ticket.len().ne(&6) {
@@ -39,26 +39,17 @@ pub fn ensure_is_enough_funds_to_cover_tickets(
     Ok(())
 }
 
-pub fn create_next_lottery(deps: DepsMut, env: Env) -> StdResult<()> {
-    let lottery_id =
-        TOTAL_LOTTERIES.update(deps.storage, |id: u64| -> StdResult<u64> { Ok(id.add(1)) })?;
+pub fn create_next_draw(deps: DepsMut, env: Env) -> StdResult<()> {
+    let id = DRAWS_INDEX.update(deps.storage, |id: u64| -> StdResult<u64> { Ok(id.add(1)) })?;
     let config = CONFIG.load(deps.storage)?;
 
     let end_time = Expiration::AtTime(env.block.time).add(config.interval)?;
 
-    let lottery = Lottery {
-        id: lottery_id,
-        status: Status::Open,
-        end_time,
-        winner_number: None,
-        ticket_price: config.ticket_price.clone(),
-        total_prize: coin(0, config.ticket_price.denom),
-        total_tickets: 0u64,
-        prize_per_match: None,
-        winners_per_match: None,
-    };
-
-    LOTTERIES.save(deps.storage, lottery_id, &lottery.clone())?;
+    DRAWS.save(
+        deps.storage,
+        id,
+        &Draw::new(id, end_time, config.ticket_price),
+    )?;
 
     Ok(())
 }
@@ -131,4 +122,25 @@ pub fn check_tickets(tickets: Vec<String>, winning_ticket: String) -> Vec<Ticket
             }
         })
         .collect()
+}
+
+pub fn increase_prize_with_accumulative_pot(
+    deps: DepsMut,
+    draw_id: u64,
+    accumulative_pot: Uint128,
+) -> StdResult<()> {
+    let config = CONFIG.load(deps.storage)?;
+    DRAWS.update(deps.storage, draw_id, |d| -> StdResult<Draw> {
+        let mut current_draw = d.unwrap();
+        let treasury_reward = accumulative_pot.mul(Decimal::percent(config.treasury_fee.into()));
+
+        current_draw.total_prize.amount = current_draw
+            .total_prize
+            .amount
+            .add(accumulative_pot.sub(treasury_reward));
+
+        Ok(current_draw)
+    })?;
+
+    Ok(())
 }
