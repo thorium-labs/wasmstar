@@ -35,7 +35,7 @@ fn do_instantaite() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
         nois_proxy: NOIS_ADDR.to_string(),
         percentage_per_match: [3, 6, 8, 15, 25, 40],
         ticket_price: coin(TICKET_PRICE, DENOM),
-        treasury_fee: coin(1000, DENOM),
+        treasury_fee: 3,
     };
 
     instantiate(deps.as_mut(), env, info, instantiate_msg).unwrap();

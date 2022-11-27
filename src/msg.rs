@@ -7,7 +7,7 @@ use crate::state::{Config, Lottery, TicketResult};
 
 #[cw_serde]
 pub struct InstantiateMsg {
-    pub treasury_fee: Coin,
+    pub treasury_fee: u8,
     pub ticket_price: Coin,
     pub lottery_interval: Duration,
     pub nois_proxy: String,
@@ -30,7 +30,10 @@ pub enum ExecuteMsg {
     Receive {
         callback: NoisCallback,
     },
-    // Update Config
+    UpdateConfig {
+        new_config: UpdateConfigMsg,
+    },
+    // Staking Executions
 }
 
 #[cw_serde]
@@ -46,4 +49,14 @@ pub enum QueryMsg {
     GetTickets { addr: String, lottery_id: u64 },
     #[returns(Config)]
     GetConfig {},
+}
+
+#[cw_serde]
+pub struct UpdateConfigMsg {
+    pub treasury_fee: Option<u8>,
+    pub ticket_price: Option<Coin>,
+    pub interval: Option<Duration>,
+    pub nois_proxy: Option<String>,
+    pub max_tickets_per_user: Option<u32>,
+    pub percentage_per_match: Option<[u8; 6]>,
 }

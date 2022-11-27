@@ -2,11 +2,11 @@
 use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
-    coin, ensure_eq, to_binary, wasm_execute, Addr, BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env,
-    MessageInfo, Order, Response, StdResult,
+    coin, ensure_eq, to_binary, wasm_execute, Addr, BankMsg, Binary, CosmosMsg, Decimal, Deps,
+    DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128,
 };
 use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
-use std::ops::{Add, Mul};
+use std::ops::{Add, Mul, Sub};
 
 use cw2::set_contract_version;
 
@@ -16,7 +16,7 @@ use crate::helpers::{
     check_tickets, create_next_lottery, ensure_is_enough_funds_to_cover_tickets,
     ensure_ticket_is_valid,
 };
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UpdateConfigMsg};
 use crate::state::{
     Config, Lottery, Status, TicketResult, CONFIG, LOTTERIES, TICKETS, TOTAL_LOTTERIES, WINNERS,
 };
@@ -75,6 +75,7 @@ pub fn execute(
         ExecuteMsg::ClaimLottery { id } => claim_lottery(deps, info, id),
         ExecuteMsg::ExecuteLottery { id } => execute_lottery(deps, env, info, id),
         ExecuteMsg::Receive { callback } => random_callback(deps, info, callback),
+        ExecuteMsg::UpdateConfig { new_config } => update_config(deps, info, new_config),
     }
 }
 
@@ -138,6 +139,7 @@ pub fn claim_lottery(
     info: MessageInfo,
     lottery_id: u64,
 ) -> Result<Response, ContractError> {
+    // TODO: Remove winners and use indexer
     if WINNERS
         .may_load(deps.storage, (lottery_id, info.sender.clone()))?
         .is_some()
@@ -251,9 +253,61 @@ pub fn random_callback(
 
     lottery.winner_number = Some(winner_number.clone());
     lottery.status = Status::Claimable;
-    lottery.winners_per_match = Some(winners_per_match);
+    lottery.winners_per_match = Some(winners_per_match.clone());
 
     LOTTERIES.save(deps.storage, lottery_id, &lottery)?;
+
+    let config = CONFIG.load(deps.storage)?;
+    let mut current_lottery = LOTTERIES.load(deps.storage, lottery_id + 1)?;
+
+    let accumulative_pot = lottery
+        .prize_per_match
+        .unwrap()
+        .iter()
+        .fold(Uint128::zero(), |acc, x| acc.add(x.clone()));
+
+    let treasury_reward = accumulative_pot.mul(Decimal::percent(config.treasury_fee.into()));
+
+    current_lottery.total_prize.amount = current_lottery
+        .total_prize
+        .amount
+        .add(accumulative_pot.sub(treasury_reward));
+
+    Ok(Response::default())
+}
+
+pub fn update_config(
+    deps: DepsMut,
+    info: MessageInfo,
+    config: UpdateConfigMsg,
+) -> Result<Response, ContractError> {
+    let mut current_config = CONFIG.load(deps.storage)?;
+
+    if info.sender != deps.api.addr_humanize(&current_config.owner)? {
+        return Err(ContractError::Unauthorized);
+    }
+
+    if let Some(new_nois_proxy) = config.nois_proxy {
+        current_config.nois_proxy = deps.api.addr_validate(new_nois_proxy.as_str())?;
+    }
+
+    if let Some(new_treasury_fee) = config.treasury_fee {
+        current_config.treasury_fee = new_treasury_fee;
+    }
+
+    if let Some(new_percentage_per_match) = config.percentage_per_match {
+        current_config.percentage_per_match = new_percentage_per_match;
+    }
+
+    if let Some(new_ticket_price) = config.ticket_price {
+        current_config.ticket_price = new_ticket_price;
+    }
+
+    if let Some(new_max_tickets_per_user) = config.max_tickets_per_user {
+        current_config.max_tickets_per_user = new_max_tickets_per_user;
+    }
+
+    CONFIG.save(deps.storage, &current_config)?;
 
     Ok(Response::default())
 }

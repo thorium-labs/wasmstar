@@ -16,7 +16,7 @@ export interface InstantiateMsg {
   nois_proxy: string;
   percentage_per_match: [number, number, number, number, number, number];
   ticket_price: Coin;
-  treasury_fee: Coin;
+  treasury_fee: number;
 }
 export interface Coin {
   amount: Uint128;
@@ -40,11 +40,23 @@ export type ExecuteMsg = {
   receive: {
     callback: NoisCallback;
   };
+} | {
+  update_config: {
+    new_config: UpdateConfigMsg;
+  };
 };
 export type HexBinary = string;
 export interface NoisCallback {
   job_id: string;
   randomness: HexBinary;
+}
+export interface UpdateConfigMsg {
+  interval?: Duration | null;
+  max_tickets_per_user?: number | null;
+  nois_proxy?: string | null;
+  percentage_per_match?: [number, number, number, number, number, number] | null;
+  ticket_price?: Coin | null;
+  treasury_fee?: number | null;
 }
 export type QueryMsg = {
   get_lottery: {
@@ -57,11 +69,30 @@ export type QueryMsg = {
     addr: string;
     lottery_id: number;
   };
+} | {
+  get_tickets: {
+    addr: string;
+    lottery_id: number;
+  };
+} | {
+  get_config: {};
 };
 export type ArrayOfTicketResult = TicketResult[];
 export interface TicketResult {
   matches: number;
   ticket_number: string;
+}
+export type Addr = string;
+export type CanonicalAddr = Binary;
+export type Binary = string;
+export interface Config {
+  interval: Duration;
+  max_tickets_per_user: number;
+  nois_proxy: Addr;
+  owner: CanonicalAddr;
+  percentage_per_match: [number, number, number, number, number, number];
+  ticket_price: Coin;
+  treasury_fee: number;
 }
 export type Expiration = {
   at_height: number;
@@ -84,3 +115,4 @@ export interface Lottery {
   winner_number?: string | null;
   winners_per_match?: [number, number, number, number, number, number] | null;
 }
+export type ArrayOfString = string[];

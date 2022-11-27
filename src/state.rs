@@ -14,7 +14,7 @@ pub enum Status {
 pub struct Config {
     pub owner: CanonicalAddr,
     pub interval: Duration,
-    pub treasury_fee: Coin,
+    pub treasury_fee: u8,
     pub ticket_price: Coin,
     pub nois_proxy: Addr,
     pub percentage_per_match: [u8; 6],

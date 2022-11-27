@@ -30,19 +30,16 @@ import { InstantiateMsg } from "../types/SuperStar.types";
   const msg: InstantiateMsg = {
     lottery_interval: {
       // In seconds
-      time: 60 * 60,
+      time: 60 * 15,
     },
     max_tickets_per_user: 100,
     nois_proxy,
-    percentage_per_match: [3, 6, 8, 15, 25, 40],
+    percentage_per_match: [4, 7, 9, 15, 25, 40],
     ticket_price: {
       denom: config.defaultFeeToken,
       amount: String(1e6),
     },
-    treasury_fee: {
-      denom: config.defaultFeeToken,
-      amount: String(1e6),
-    },
+    treasury_fee: 3,
   };
 
   const [{ address }] = await wallet.getAccounts();

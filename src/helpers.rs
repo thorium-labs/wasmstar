@@ -44,11 +44,8 @@ pub fn create_next_lottery(deps: DepsMut, env: Env) -> StdResult<()> {
         TOTAL_LOTTERIES.update(deps.storage, |id: u64| -> StdResult<u64> { Ok(id.add(1)) })?;
     let config = CONFIG.load(deps.storage)?;
 
-    let end_time = Expiration::AtTime(env.block.time)
-        .add(config.interval)
-        .expect("error defining end_time");
+    let end_time = Expiration::AtTime(env.block.time).add(config.interval)?;
 
-    // Add funds previus lottery
     let lottery = Lottery {
         id: lottery_id,
         status: Status::Open,
