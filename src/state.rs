@@ -35,16 +35,22 @@ pub struct Draw {
 }
 
 impl Draw {
-    pub fn new(id: u64, end_time: Expiration, ticket_price: Coin) -> Self {
+    pub fn new(
+        id: u64,
+        end_time: Expiration,
+        ticket_price: Coin,
+        inital_prize: Uint128,
+        prize_per_match: Option<[Uint128; 6]>,
+    ) -> Self {
         return Draw {
             id,
             status: Status::Open,
             end_time,
             winner_number: None,
             ticket_price: ticket_price.clone(),
-            total_prize: coin(0, ticket_price.denom),
+            total_prize: coin(inital_prize.u128(), ticket_price.denom),
             total_tickets: 0u64,
-            prize_per_match: None,
+            prize_per_match,
             winners_per_match: None,
         };
     }

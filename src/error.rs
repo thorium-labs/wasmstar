@@ -24,6 +24,9 @@ pub enum ContractError {
     #[error("DrawIsNotOpen")]
     DrawIsNotOpen,
 
+    #[error("DrawIsNotPending")]
+    DrawIsNotPending,
+
     #[error("DrawStillOpen")]
     DrawStillOpen,
 

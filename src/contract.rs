@@ -3,7 +3,7 @@ use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
     coin, ensure_eq, to_binary, wasm_execute, Addr, BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env,
-    MessageInfo, Order, Response, StdResult, Uint128,
+    Event, MessageInfo, Order, Response, StdResult, Uint128,
 };
 use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
 use std::ops::{Add, Mul};
@@ -14,7 +14,7 @@ use crate::error::ContractError;
 use crate::helpers::{
     calculate_prize_distribution, calculate_tickets_prize, calculate_winner_per_match,
     check_tickets, create_next_draw, ensure_is_enough_funds_to_cover_tickets,
-    ensure_ticket_is_valid, increase_prize_with_accumulative_pot,
+    ensure_ticket_is_valid,
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UpdateConfigMsg};
 use crate::state::{
@@ -55,9 +55,11 @@ pub fn instantiate(
     CONFIG.save(deps.storage, &config)?;
     DRAWS_INDEX.save(deps.storage, &0)?;
 
-    create_next_draw(deps, env)?;
+    create_next_draw(deps, &env, Uint128::zero())?;
 
-    Ok(Response::new().add_attribute("action", "/superstar.v1.MsgInstantiateContract"))
+    let event = Event::new("superstar.v1.MsgInstantiateContract");
+
+    Ok(Response::new().add_event(event))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -73,7 +75,7 @@ pub fn execute(
         }
         ExecuteMsg::ClaimPrize { draw_id } => claim_prize(deps, info, draw_id),
         ExecuteMsg::ExecuteDraw { id } => execute_draw(deps, env, info, id),
-        ExecuteMsg::Receive { callback } => receive_randomness(deps, info, callback),
+        ExecuteMsg::Receive { callback } => receive_randomness(deps, info, env, callback),
         ExecuteMsg::UpdateConfig { new_config } => update_config(deps, info, new_config),
     }
 }
@@ -113,7 +115,11 @@ pub fn buy_tickets(
 
     tickets_bought.extend(tickets);
 
-    TICKETS.save(deps.storage, (draw_id, info.sender), &tickets_bought)?;
+    TICKETS.save(
+        deps.storage,
+        (draw_id, info.sender.clone()),
+        &tickets_bought,
+    )?;
 
     draw.total_tickets = draw.total_tickets.add(u64::from(n_tickets));
     draw.total_prize.amount += required_funds.amount;
@@ -125,10 +131,12 @@ pub fn buy_tickets(
 
     DRAWS.save(deps.storage, draw_id, &draw)?;
 
-    Ok(Response::new()
-        .add_attribute("action", "/superstar.v1.MsgBuyTickets")
-        .add_attribute("total_tickets", draw.total_tickets.to_string())
-        .add_attribute("total_prize", draw.total_prize.amount))
+    let event = Event::new("superstar.v1.MsgBuyTickets")
+        .add_attribute("draw_id", draw_id.to_string())
+        .add_attribute("buyer", info.sender)
+        .add_attribute("tickets_bought", tickets_bought.len().to_string());
+
+    Ok(Response::new().add_event(event))
 }
 
 pub fn claim_prize(
@@ -173,15 +181,17 @@ pub fn claim_prize(
         &draw.ticket_price,
     )?;
 
+    let event = Event::new("superstar.v1.MsgClaimPrize")
+        .add_attribute("draw_id", draw_id.to_string())
+        .add_attribute("winner", info.sender.to_string())
+        .add_attribute("prize", prize.to_string());
+
     Ok(Response::new()
         .add_message(CosmosMsg::Bank(BankMsg::Send {
             to_address: info.sender.to_string(),
             amount: vec![prize.clone()],
         }))
-        .add_attribute("action", "/superstar.v1.MsgClaimPrize")
-        .add_attribute("draw_id", draw_id.to_string())
-        .add_attribute("winner", info.sender.to_string())
-        .add_attribute("prize", prize.to_string()))
+        .add_event(event))
 }
 
 pub fn execute_draw(
@@ -209,22 +219,35 @@ pub fn execute_draw(
     draw.status = Status::Pending;
 
     DRAWS.save(deps.storage, id, &draw)?;
-    create_next_draw(deps, env.clone())?;
 
-    Ok(Response::new()
-        .add_message(msg)
-        .add_attribute("action", "/superstar.v1.MsgExecuteDraw")
+    let event = Event::new("superstar.v1.MsgExecuteDraw")
         .add_attribute("draw_id", id.to_string())
-        .add_attribute("executed_at", env.block.time.seconds().to_string()))
+        .add_attribute("executed_at", env.block.time.seconds().to_string());
+
+    Ok(Response::new().add_message(msg).add_event(event))
 }
 
 pub fn receive_randomness(
     deps: DepsMut,
     info: MessageInfo,
+    env: Env,
     callback: NoisCallback,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
     ensure_eq!(info.sender, config.nois_proxy, ContractError::Unauthorized);
+
+    let draw_id = callback
+        .job_id
+        .parse::<u64>()
+        .expect("error parsing job_id");
+
+    let mut draw = DRAWS.load(deps.storage, draw_id)?;
+
+    ensure_eq!(
+        draw.status,
+        Status::Pending,
+        ContractError::DrawIsNotPending
+    );
 
     let randomness: [u8; 32] = callback
         .randomness
@@ -237,17 +260,10 @@ pub fn receive_randomness(
         .into_iter()
         .fold(String::new(), |acc, x| acc + &x.to_string());
 
-    let draw_id = callback
-        .job_id
-        .parse::<u64>()
-        .expect("error parsing job_id");
-
     let purchases = TICKETS
         .prefix(draw_id)
         .range(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<Vec<(Addr, Vec<String>)>>>()?;
-
-    let mut draw = DRAWS.load(deps.storage, draw_id)?;
 
     let winners_per_match = calculate_winner_per_match(purchases, winner_number.clone());
 
@@ -259,19 +275,46 @@ pub fn receive_randomness(
 
     let accumulative_pot = draw
         .prize_per_match
-        .unwrap()
+        .unwrap_or_default()
         .iter()
-        .fold(Uint128::zero(), |acc, x| acc.add(x.clone()));
+        .enumerate()
+        .fold(Uint128::zero(), |acc, (i, x)| {
+            if winners_per_match[i].eq(&0) {
+                acc.add(&x.clone())
+            } else {
+                acc
+            }
+        });
 
-    increase_prize_with_accumulative_pot(deps, draw_id.add(1), accumulative_pot.clone())?;
+    let config = CONFIG.load(deps.storage)?;
 
-    Ok(Response::new()
-        .add_attribute("action", "/superstar.v1.MsgReceiveRandomness")
+    let treasury_fee = accumulative_pot.multiply_ratio(config.treasury_fee, Uint128::from(100u128));
+
+    let mut response: Response = Response::new();
+
+    if !treasury_fee.is_zero() {
+        response = response.add_message(CosmosMsg::Bank(BankMsg::Send {
+            to_address: deps.api.addr_humanize(&config.owner)?.to_string(),
+            amount: vec![coin(treasury_fee.u128(), config.ticket_price.denom)],
+        }));
+    }
+
+    create_next_draw(
+        deps,
+        &env,
+        accumulative_pot
+            .checked_sub(treasury_fee)
+            .map_err(|e| ContractError::Std(e.into()))?,
+    )?;
+
+    let event = Event::new("superstar.v1.MsgReceiveRandomness")
         .add_attribute("draw_id", draw_id.to_string())
         .add_attribute(
             "winner_number",
             draw.winner_number.unwrap_or_default().to_string(),
-        ))
+        );
+
+    Ok(response.add_event(event))
 }
 
 pub fn update_config(
@@ -307,7 +350,9 @@ pub fn update_config(
 
     CONFIG.save(deps.storage, &current_config)?;
 
-    Ok(Response::new().add_attribute("action", "/superstar.v1.MsgUpdateConfig"))
+    let event = Event::new("superstar.v1.MsgUpdateConfig");
+
+    Ok(Response::new().add_event(event))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -344,14 +389,17 @@ pub fn get_config(deps: Deps) -> StdResult<Config> {
 
 pub fn check_winner(deps: Deps, addr: String, draw_id: u64) -> StdResult<Vec<TicketResult>> {
     let draw = DRAWS.load(deps.storage, draw_id)?;
-    let tickets = TICKETS.load(
+    let tickets = TICKETS.may_load(
         deps.storage,
         (draw_id, deps.api.addr_validate(addr.as_str())?),
     )?;
 
-    if let Some(w_number) = draw.winner_number {
-        Ok(check_tickets(tickets, w_number))
+    if let Some(tickets) = tickets {
+        Ok(check_tickets(
+            tickets,
+            draw.winner_number.unwrap_or_default(),
+        ))
     } else {
-        Ok(vec![])
+        Ok(Vec::new())
     }
 }

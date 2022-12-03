@@ -1,18 +1,18 @@
 use cosmwasm_std::{
     coin,
     testing::{mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage},
-    to_binary, CosmosMsg, HexBinary, OwnedDeps, StdResult, Timestamp, Uint128, WasmMsg,
+    to_binary, Addr, CosmosMsg, HexBinary, OwnedDeps, StdResult, Timestamp, Uint128, WasmMsg,
 };
 use cw_utils::{Duration, Expiration};
 use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
 
 use crate::{
     contract::{
-        buy_tickets, execute_draw, get_config, get_current_draw, get_draw, get_tickets,
-        instantiate, receive_randomness,
+        buy_tickets, check_winner, execute_draw, get_config, get_current_draw, get_draw,
+        get_tickets, instantiate, receive_randomness,
     },
     error::ContractError,
-    helpers::{calculate_prize_distribution, create_next_draw},
+    helpers::{calculate_matches, calculate_prize_distribution, create_next_draw},
     state::{Draw, DRAWS},
 };
 use crate::{msg::InstantiateMsg, state::Status};
@@ -187,7 +187,7 @@ fn once_purchased_ticktes_it_should_update_prizes() {
 
     let draw = get_current_draw(deps.as_ref()).unwrap();
 
-    assert_eq!(draw.prize_per_match, None);
+    assert_eq!(draw.prize_per_match, Some([Uint128::zero(); 6]));
     assert_eq!(draw.total_tickets, 0);
     assert_eq!(draw.total_prize.amount, Uint128::zero());
 
@@ -278,6 +278,7 @@ fn only_nois_can_execute_receive_randomness() {
     let err = receive_randomness(
         deps.as_mut(),
         mock_info(PARTICIPANT_ADDR, &[]),
+        mock_env(),
         NoisCallback {
             job_id: "1".to_string(),
             randomness,
@@ -312,11 +313,18 @@ fn execute_receive_randomness_should_work() {
     )
     .unwrap();
 
-    create_next_draw(deps.as_mut(), mock_env()).unwrap();
+    DRAWS
+        .update(deps.as_mut().storage, 1, |draw| -> StdResult<Draw> {
+            let mut draw = draw.unwrap();
+            draw.status = Status::Pending;
+            Ok(draw)
+        })
+        .unwrap();
 
     receive_randomness(
         deps.as_mut(),
         mock_info("nois", &[]),
+        mock_env(),
         NoisCallback {
             job_id: "1".to_string(),
             randomness: randomness.clone(),
@@ -333,4 +341,41 @@ fn execute_receive_randomness_should_work() {
         draw.total_prize,
         coin(TICKET_PRICE * tickets.len() as u128, DENOM)
     );
+}
+
+#[test]
+fn calculate_matches_should_return_match_same_position() {
+    let winning_ticket = "123456";
+    let ticket = "234561";
+
+    let matches = calculate_matches(winning_ticket, ticket);
+    assert_eq!(matches, 0);
+
+    let winning_ticket = "123456";
+    let ticket = "143456";
+
+    let matches = calculate_matches(winning_ticket, ticket);
+    assert_eq!(matches, 1);
+
+    let winning_ticket = "123456";
+    let ticket = "123456";
+
+    let matches = calculate_matches(winning_ticket, ticket);
+    assert_eq!(matches, 6)
+}
+
+#[test]
+fn check_winner_when_empty() {
+    let mut deps = do_instantaite();
+    create_next_draw(deps.as_mut(), &mock_env(), Uint128::zero()).unwrap();
+    DRAWS
+        .update(deps.as_mut().storage, 1, |d| -> StdResult<Draw> {
+            let mut draw = d.unwrap();
+            draw.winner_number = Some("123456".to_string());
+            Ok(draw)
+        })
+        .unwrap();
+
+    let result = check_winner(deps.as_ref(), "addr".to_string(), 1).unwrap();
+    assert_eq!(result, vec![]);
 }

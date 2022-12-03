@@ -1,1 +1,1 @@
-d52aeea3b2ae9fedefb3143e2a09a8ded3f575c9020f3a1490a2f5cdb3de5d4a  super_star.wasm
+4e1a147ccb44753bafaac896bb1d88372c3d13e5fa6f32489f1ce9ca4d0628a3  super_star.wasm
