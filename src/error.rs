@@ -9,14 +9,11 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized,
 
-    #[error("InvalidProxyAddr")]
-    InvalidProxyAddr,
+    #[error("RandomnessAlreadyRequested")]
+    RandomnessAlreadyRequested,
 
-    #[error("InvalidPriceTicket")]
-    InvalidPriceTicket,
-
-    #[error("InvalidDenom")]
-    InvalidDenom,
+    #[error("InvalidCoin")]
+    InvalidCoin,
 
     #[error("MaxTicketsPerUserExceeded")]
     MaxTicketsPerUserExceeded,
@@ -27,20 +24,20 @@ pub enum ContractError {
     #[error("DrawIsNotPending")]
     DrawIsNotPending,
 
-    #[error("DrawStillOpen")]
-    DrawStillOpen,
+    #[error("DrawIsOpen")]
+    DrawIsOpen,
 
     #[error("InvalidTicket")]
     InvalidTicket,
 
-    #[error("Invalid Amount")]
-    InvalidAmount,
+    #[error("InsufficientFunds")]
+    InsufficientFunds,
 
     #[error("InvalidRandomness")]
     InvalidRandomness,
 
-    #[error("AlreadyClaimed")]
-    AlreadyClaimed,
+    #[error("PrizeAlreadyClaimed")]
+    PrizeAlreadyClaimed,
 
     #[error("DrawIsNotClaimable")]
     DrawIsNotClaimable,

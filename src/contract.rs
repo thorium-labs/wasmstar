@@ -5,6 +5,7 @@ use cosmwasm_std::{
     coin, ensure_eq, to_binary, wasm_execute, Addr, BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env,
     Event, MessageInfo, Order, Response, StdResult, Uint128,
 };
+
 use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
 use std::ops::{Add, Mul};
 
@@ -12,13 +13,13 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::helpers::{
-    calculate_prize_distribution, calculate_tickets_prize, calculate_winner_per_match,
-    check_tickets, create_next_draw, ensure_is_enough_funds_to_cover_tickets,
-    ensure_ticket_is_valid,
+    build_expiration_time, calculate_prize_distribution, calculate_tickets_prize,
+    calculate_winner_per_match, check_tickets, create_next_draw,
+    ensure_is_enough_funds_to_cover_tickets, ensure_ticket_is_valid,
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UpdateConfigMsg};
 use crate::state::{
-    Config, Draw, Status, TicketResult, CONFIG, DRAWS, DRAWS_INDEX, TICKETS, WINNERS,
+    Config, Draw, Status, TicketResult, CONFIG, DRAWS, DRAWS_INDEX, REQUESTS, TICKETS, WINNERS,
 };
 
 const CONTRACT_NAME: &str = "crates.io:super-star";
@@ -33,21 +34,15 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    let nois_proxy_addr = deps
-        .api
-        .addr_validate(&msg.nois_proxy)
-        .map_err(|_| ContractError::InvalidProxyAddr)?;
-
-    if msg.ticket_price.amount.is_zero() {
-        return Err(ContractError::InvalidPriceTicket);
-    }
+    let nois_proxy_addr = deps.api.addr_validate(&msg.nois_proxy)?;
 
     let config = Config {
         owner: deps.api.addr_canonicalize(&info.sender.as_str())?,
         interval: msg.draw_interval,
         ticket_price: msg.ticket_price,
-        nois_proxy: nois_proxy_addr,
         treasury_fee: msg.treasury_fee,
+        nois_proxy: nois_proxy_addr,
+        request_timeout: msg.request_timeout,
         percentage_per_match: msg.percentage_per_match,
         max_tickets_per_user: msg.max_tickets_per_user,
     };
@@ -70,12 +65,13 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::BuyTicket { tickets, draw_id } => {
+        ExecuteMsg::BuyTickets { tickets, draw_id } => {
             buy_tickets(deps, env, info, tickets, draw_id)
         }
+        ExecuteMsg::Raffle { draw_id } => raffle(deps, env, draw_id),
         ExecuteMsg::ClaimPrize { draw_id } => claim_prize(deps, info, draw_id),
-        ExecuteMsg::ExecuteDraw { id } => execute_draw(deps, env, info, id),
-        ExecuteMsg::Receive { callback } => receive_randomness(deps, info, env, callback),
+        ExecuteMsg::RequestRandomness { draw_id } => request_randomness(deps, env, info, draw_id),
+        ExecuteMsg::Receive { callback } => receive_randomness(deps, info, callback),
         ExecuteMsg::UpdateConfig { new_config } => update_config(deps, info, new_config),
     }
 }
@@ -134,7 +130,7 @@ pub fn buy_tickets(
     let event = Event::new("superstar.v1.MsgBuyTickets")
         .add_attribute("draw_id", draw_id.to_string())
         .add_attribute("buyer", info.sender)
-        .add_attribute("tickets_bought", tickets_bought.len().to_string());
+        .add_attribute("tickets_bought", format!("{:?}", tickets_bought));
 
     Ok(Response::new().add_event(event))
 }
@@ -172,7 +168,7 @@ pub fn claim_prize(
         .may_load(deps.storage, (draw_id, info.sender.clone()))?
         .is_some()
     {
-        return Err(ContractError::AlreadyClaimed);
+        return Err(ContractError::PrizeAlreadyClaimed);
     }
 
     WINNERS.save(
@@ -194,43 +190,55 @@ pub fn claim_prize(
         .add_event(event))
 }
 
-pub fn execute_draw(
+pub fn request_randomness(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
     id: u64,
 ) -> Result<Response, ContractError> {
-    let mut draw = DRAWS.load(deps.storage, id.clone())?;
+    let mut draw = DRAWS.load(deps.storage, id)?;
 
     if !draw.end_time.is_expired(&env.block) {
-        return Err(ContractError::DrawStillOpen);
+        return Err(ContractError::DrawIsOpen);
+    }
+
+    if let Some(request) = REQUESTS.may_load(deps.storage, id)? {
+        if !request.is_expired(&env.block) {
+            return Err(ContractError::RandomnessAlreadyRequested);
+        }
+    }
+
+    if draw.status.ne(&Status::Pending) {
+        draw.status = Status::Pending;
+        DRAWS.save(deps.storage, id, &draw)?;
     }
 
     let config = CONFIG.load(deps.storage)?;
 
+    REQUESTS.save(
+        deps.storage,
+        id,
+        &build_expiration_time(&env, config.request_timeout)?,
+    )?;
+
     let msg = wasm_execute(
-        config.nois_proxy,
+        config.nois_proxy.to_string(),
         &ProxyExecuteMsg::GetNextRandomness {
             job_id: id.to_string(),
         },
         info.funds,
     )?;
 
-    draw.status = Status::Pending;
-
-    DRAWS.save(deps.storage, id, &draw)?;
-
-    let event = Event::new("superstar.v1.MsgExecuteDraw")
+    let event = Event::new("superstar.v1.MsgCloseDraw")
         .add_attribute("draw_id", id.to_string())
-        .add_attribute("executed_at", env.block.time.seconds().to_string());
+        .add_attribute("closed_at", env.block.time.seconds().to_string());
 
-    Ok(Response::new().add_message(msg).add_event(event))
+    Ok(Response::new().add_event(event).add_message(msg))
 }
 
 pub fn receive_randomness(
     deps: DepsMut,
     info: MessageInfo,
-    env: Env,
     callback: NoisCallback,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
@@ -260,14 +268,39 @@ pub fn receive_randomness(
         .into_iter()
         .fold(String::new(), |acc, x| acc + &x.to_string());
 
+    draw.winner_number = Some(winner_number.clone());
+
+    DRAWS.save(deps.storage, draw_id, &draw)?;
+    REQUESTS.remove(deps.storage, draw_id);
+
+    let event = Event::new("superstar.v1.MsgReceiveRandomness")
+        .add_attribute("draw_id", draw_id.to_string())
+        .add_attribute(
+            "winner_number",
+            draw.winner_number.unwrap_or_default().to_string(),
+        );
+
+    Ok(Response::new().add_event(event))
+}
+
+pub fn raffle(deps: DepsMut, env: Env, draw_id: u64) -> Result<Response, ContractError> {
+    let mut draw = DRAWS.load(deps.storage, draw_id)?;
+
+    ensure_eq!(
+        draw.status,
+        Status::Pending,
+        ContractError::DrawIsNotPending
+    );
+
     let purchases = TICKETS
         .prefix(draw_id)
         .range(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<Vec<(Addr, Vec<String>)>>>()?;
 
+    let winner_number = draw.winner_number.clone().unwrap_or_default();
+
     let winners_per_match = calculate_winner_per_match(purchases, winner_number.clone());
 
-    draw.winner_number = Some(winner_number.clone());
     draw.status = Status::Claimable;
     draw.winners_per_match = Some(winners_per_match.clone());
 
@@ -299,20 +332,11 @@ pub fn receive_randomness(
         }));
     }
 
-    create_next_draw(
-        deps,
-        &env,
-        accumulative_pot
-            .checked_sub(treasury_fee)
-            .map_err(|e| ContractError::Std(e.into()))?,
-    )?;
+    create_next_draw(deps, &env, accumulative_pot)?;
 
     let event = Event::new("superstar.v1.MsgReceiveRandomness")
         .add_attribute("draw_id", draw_id.to_string())
-        .add_attribute(
-            "winner_number",
-            draw.winner_number.unwrap_or_default().to_string(),
-        );
+        .add_attribute("winner_number", winner_number.to_string());
 
     Ok(response.add_event(event))
 }
@@ -330,6 +354,10 @@ pub fn update_config(
 
     if let Some(new_nois_proxy) = config.nois_proxy {
         current_config.nois_proxy = deps.api.addr_validate(new_nois_proxy.as_str())?;
+    }
+
+    if let Some(request_timeout) = config.request_timeout {
+        current_config.request_timeout = request_timeout;
     }
 
     if let Some(new_treasury_fee) = config.treasury_fee {

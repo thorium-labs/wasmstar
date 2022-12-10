@@ -34,6 +34,6 @@ import { InstantiateMsg } from "../types/SuperStar.types";
   };
 
   const [{ address }] = await wallet.getAccounts();
-  const { contractAddress } = await client.instantiate(address, +codeId, msg, "super_start.v1", "auto");
+  const { contractAddress } = await client.instantiate(address, +codeId, msg, "super_start.v1", "auto", { admin: address });
   console.log("Contract Address:", contractAddress);
 })();

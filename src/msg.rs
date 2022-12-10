@@ -8,6 +8,7 @@ use crate::state::{Config, Draw, TicketResult};
 #[cw_serde]
 pub struct InstantiateMsg {
     pub treasury_fee: u8,
+    pub request_timeout: Duration,
     pub ticket_price: Coin,
     pub draw_interval: Duration,
     pub nois_proxy: String,
@@ -17,12 +18,12 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    BuyTicket { tickets: Vec<String>, draw_id: u64 },
-    ClaimPrize { draw_id: u64 },
-    ExecuteDraw { id: u64 },
     Receive { callback: NoisCallback },
+    RequestRandomness { draw_id: u64 },
+    BuyTickets { tickets: Vec<String>, draw_id: u64 },
+    Raffle { draw_id: u64 },
+    ClaimPrize { draw_id: u64 },
     UpdateConfig { new_config: UpdateConfigMsg },
-    // Staking Executions
 }
 
 #[cw_serde]
@@ -43,8 +44,10 @@ pub enum QueryMsg {
 #[cw_serde]
 pub struct UpdateConfigMsg {
     pub treasury_fee: Option<u8>,
+    pub owner: Option<String>,
     pub ticket_price: Option<Coin>,
     pub interval: Option<Duration>,
+    pub request_timeout: Option<Duration>,
     pub nois_proxy: Option<String>,
     pub max_tickets_per_user: Option<u32>,
     pub percentage_per_match: Option<[u8; 6]>,

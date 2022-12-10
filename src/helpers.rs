@@ -1,5 +1,5 @@
 use cosmwasm_std::{coin, Addr, Coin, DepsMut, Env, StdResult, Uint128};
-use cw_utils::Expiration;
+use cw_utils::{Duration, Expiration};
 use std::ops::Add;
 
 use crate::error::ContractError;
@@ -30,10 +30,10 @@ pub fn ensure_is_enough_funds_to_cover_tickets(
     let fund = sent_fund
         .iter()
         .find(|c| c.denom == required_funds.denom)
-        .ok_or(ContractError::InvalidDenom)?;
+        .ok_or(ContractError::InvalidCoin)?;
 
     if fund.amount < required_funds.amount {
-        return Err(ContractError::InvalidAmount);
+        return Err(ContractError::InsufficientFunds);
     }
 
     Ok(())
@@ -43,7 +43,10 @@ pub fn create_next_draw(deps: DepsMut, env: &Env, inital_prize: Uint128) -> StdR
     let id = DRAWS_INDEX.update(deps.storage, |id: u64| -> StdResult<u64> { Ok(id.add(1)) })?;
     let config = CONFIG.load(deps.storage)?;
 
-    let end_time = Expiration::AtTime(env.block.time).add(config.interval)?;
+    let end_time = match config.interval {
+        Duration::Height(_) => Expiration::AtHeight(env.block.height).add(config.interval),
+        Duration::Time(_) => Expiration::AtTime(env.block.time).add(config.interval),
+    }?;
 
     let prize_per_match = Some(calculate_prize_distribution(
         inital_prize.clone(),
@@ -136,4 +139,11 @@ pub fn check_tickets(tickets: Vec<String>, winning_ticket: String) -> Vec<Ticket
             }
         })
         .collect()
+}
+
+pub fn build_expiration_time(env: &Env, duration: Duration) -> StdResult<Expiration> {
+    match duration {
+        Duration::Height(_) => Expiration::AtHeight(env.block.height).add(duration),
+        Duration::Time(_) => Expiration::AtTime(env.block.time).add(duration),
+    }
 }

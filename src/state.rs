@@ -17,6 +17,7 @@ pub struct Config {
     pub treasury_fee: u8,
     pub ticket_price: Coin,
     pub nois_proxy: Addr,
+    pub request_timeout: Duration,
     pub percentage_per_match: [u8; 6],
     pub max_tickets_per_user: u32,
 }
@@ -67,3 +68,4 @@ pub const DRAWS_INDEX: Item<u64> = Item::new("draws_index");
 pub const DRAWS: Map<u64, Draw> = Map::new("draws");
 pub const WINNERS: Map<(u64, Addr), Coin> = Map::new("winners");
 pub const TICKETS: Map<(u64, Addr), Vec<String>> = Map::new("tickets");
+pub const REQUESTS: Map<u64, Expiration> = Map::new("requests");
