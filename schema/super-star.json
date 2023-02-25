@@ -1,6 +1,6 @@
 {
   "contract_name": "super-star",
-  "contract_version": "0.1.0",
+  "contract_version": "0.1.2",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -11,6 +11,7 @@
       "max_tickets_per_user",
       "nois_proxy",
       "percentage_per_match",
+      "request_timeout",
       "ticket_price",
       "treasury_fee"
     ],
@@ -35,6 +36,9 @@
         },
         "maxItems": 6,
         "minItems": 6
+      },
+      "request_timeout": {
+        "$ref": "#/definitions/Duration"
       },
       "ticket_price": {
         "$ref": "#/definitions/Coin"
@@ -109,10 +113,54 @@
       {
         "type": "object",
         "required": [
-          "buy_ticket"
+          "nois_receive"
         ],
         "properties": {
-          "buy_ticket": {
+          "nois_receive": {
+            "type": "object",
+            "required": [
+              "callback"
+            ],
+            "properties": {
+              "callback": {
+                "$ref": "#/definitions/NoisCallback"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "request_randomness"
+        ],
+        "properties": {
+          "request_randomness": {
+            "type": "object",
+            "required": [
+              "draw_id"
+            ],
+            "properties": {
+              "draw_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "buy_tickets"
+        ],
+        "properties": {
+          "buy_tickets": {
             "type": "object",
             "required": [
               "draw_id",
@@ -139,10 +187,10 @@
       {
         "type": "object",
         "required": [
-          "claim_prize"
+          "raffle"
         ],
         "properties": {
-          "claim_prize": {
+          "raffle": {
             "type": "object",
             "required": [
               "draw_id"
@@ -162,40 +210,19 @@
       {
         "type": "object",
         "required": [
-          "execute_draw"
+          "claim_prize"
         ],
         "properties": {
-          "execute_draw": {
+          "claim_prize": {
             "type": "object",
             "required": [
-              "id"
+              "draw_id"
             ],
             "properties": {
-              "id": {
+              "draw_id": {
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
-          "receive"
-        ],
-        "properties": {
-          "receive": {
-            "type": "object",
-            "required": [
-              "callback"
-            ],
-            "properties": {
-              "callback": {
-                "$ref": "#/definitions/NoisCallback"
               }
             },
             "additionalProperties": false
@@ -280,7 +307,7 @@
         "type": "string"
       },
       "NoisCallback": {
-        "description": "This must be accepted in an `Receive { callback: NoisCallback }` enum case in the ExecuteMsg of the app.",
+        "description": "This must be accepted in an `NoisReceive { callback: NoisCallback }` enum case in the ExecuteMsg of the app.",
         "type": "object",
         "required": [
           "job_id",
@@ -328,6 +355,12 @@
               "null"
             ]
           },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "percentage_per_match": {
             "type": [
               "array",
@@ -340,6 +373,16 @@
             },
             "maxItems": 6,
             "minItems": 6
+          },
+          "request_timeout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Duration"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "ticket_price": {
             "anyOf": [
@@ -514,6 +557,7 @@
         "nois_proxy",
         "owner",
         "percentage_per_match",
+        "request_timeout",
         "ticket_price",
         "treasury_fee"
       ],
@@ -541,6 +585,9 @@
           },
           "maxItems": 6,
           "minItems": 6
+        },
+        "request_timeout": {
+          "$ref": "#/definitions/Duration"
         },
         "ticket_price": {
           "$ref": "#/definitions/Coin"
@@ -759,6 +806,7 @@
           "enum": [
             "open",
             "pending",
+            "raffling",
             "claimable"
           ]
         },
@@ -925,6 +973,7 @@
           "enum": [
             "open",
             "pending",
+            "raffling",
             "claimable"
           ]
         },

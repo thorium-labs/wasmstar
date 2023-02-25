@@ -7,6 +7,7 @@ use cw_utils::{Duration, Expiration};
 pub enum Status {
     Open,
     Pending,
+    Raffling,
     Claimable,
 }
 

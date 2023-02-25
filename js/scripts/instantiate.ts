@@ -6,7 +6,7 @@ import chains from "../config/chains";
 import NoisAddresses from "../config/nois";
 import { InstantiateMsg } from "../types/SuperStar.types";
 
-(async () => {
+export const instantiate = async (codeId = process.env.CODE_ID) => {
   const mnemonic = process.env.MNEMONIC;
   const config = chains[process.env.CHAIN as keyof typeof chains];
   const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic as string, { prefix: config.bech32Prefix });
@@ -15,13 +15,15 @@ import { InstantiateMsg } from "../types/SuperStar.types";
     gasPrice: GasPrice.fromString(config.defaultGasPrice + config.defaultFeeToken),
   });
 
-  const codeId = process.env.CODE_ID as string;
   const nois_proxy = NoisAddresses[process.env.CHAIN as keyof typeof NoisAddresses];
 
   const msg: InstantiateMsg = {
     draw_interval: {
       // In seconds
       time: 60 * 5,
+    },
+    request_timeout: {
+      time: 120
     },
     max_tickets_per_user: 100,
     nois_proxy,
@@ -34,6 +36,6 @@ import { InstantiateMsg } from "../types/SuperStar.types";
   };
 
   const [{ address }] = await wallet.getAccounts();
-  const { contractAddress } = await client.instantiate(address, +codeId, msg, "super_start.v1", "auto", { admin: address });
+  const { contractAddress } = await client.instantiate(address, +(codeId as string), msg, "super_start.v1", "auto", { admin: address });
   console.log("Contract Address:", contractAddress);
-})();
+}

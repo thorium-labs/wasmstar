@@ -71,7 +71,7 @@ pub fn execute(
         ExecuteMsg::Raffle { draw_id } => raffle(deps, env, draw_id),
         ExecuteMsg::ClaimPrize { draw_id } => claim_prize(deps, info, draw_id),
         ExecuteMsg::RequestRandomness { draw_id } => request_randomness(deps, env, info, draw_id),
-        ExecuteMsg::Receive { callback } => receive_randomness(deps, info, callback),
+        ExecuteMsg::NoisReceive { callback } => receive_randomness(deps, info, callback),
         ExecuteMsg::UpdateConfig { new_config } => update_config(deps, info, new_config),
     }
 }
@@ -244,10 +244,7 @@ pub fn receive_randomness(
     let config = CONFIG.load(deps.storage)?;
     ensure_eq!(info.sender, config.nois_proxy, ContractError::Unauthorized);
 
-    let draw_id = callback
-        .job_id
-        .parse::<u64>()
-        .expect("error parsing job_id");
+    let draw_id = callback.job_id.parse::<u64>()?;
 
     let mut draw = DRAWS.load(deps.storage, draw_id)?;
 
@@ -262,13 +259,14 @@ pub fn receive_randomness(
         .to_array()
         .map_err(|_| ContractError::InvalidRandomness)?;
 
-    let result: [u8; 6] = ints_in_range(randomness, 0..=9);
+    let result = ints_in_range(randomness, 6, 0, 9);
 
     let winner_number = result
         .into_iter()
         .fold(String::new(), |acc, x| acc + &x.to_string());
 
     draw.winner_number = Some(winner_number.clone());
+    draw.status = Status::Raffling;
 
     DRAWS.save(deps.storage, draw_id, &draw)?;
     REQUESTS.remove(deps.storage, draw_id);
@@ -288,8 +286,8 @@ pub fn raffle(deps: DepsMut, env: Env, draw_id: u64) -> Result<Response, Contrac
 
     ensure_eq!(
         draw.status,
-        Status::Pending,
-        ContractError::DrawIsNotPending
+        Status::Raffling,
+        ContractError::DrawIsNotClaimable
     );
 
     let purchases = TICKETS
@@ -334,7 +332,7 @@ pub fn raffle(deps: DepsMut, env: Env, draw_id: u64) -> Result<Response, Contrac
 
     create_next_draw(deps, &env, accumulative_pot)?;
 
-    let event = Event::new("superstar.v1.MsgReceiveRandomness")
+    let event = Event::new("superstar.v1.MsgRaffle")
         .add_attribute("draw_id", draw_id.to_string())
         .add_attribute("winner_number", winner_number.to_string());
 

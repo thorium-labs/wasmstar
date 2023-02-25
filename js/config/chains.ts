@@ -1,5 +1,5 @@
 const juno_testnet = {
-  chainId: "uni-5",
+  chainId: "uni-6",
   chainName: "junotestnet",
   prettyName: "Juno Testnet",
   bech32Prefix: "juno",

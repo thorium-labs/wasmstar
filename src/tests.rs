@@ -1,15 +1,15 @@
 use cosmwasm_std::{
     coin,
     testing::{mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage},
-    to_binary, Addr, CosmosMsg, HexBinary, OwnedDeps, StdResult, Timestamp, Uint128, WasmMsg,
+    to_binary, CosmosMsg, HexBinary, OwnedDeps, StdResult, Timestamp, Uint128, WasmMsg,
 };
 use cw_utils::{Duration, Expiration};
 use nois::{ints_in_range, NoisCallback, ProxyExecuteMsg};
 
 use crate::{
     contract::{
-        buy_tickets, check_winner, execute_draw, get_config, get_current_draw, get_draw,
-        get_tickets, instantiate, receive_randomness,
+        buy_tickets, check_winner, get_config, get_current_draw, get_draw, get_tickets,
+        instantiate, receive_randomness, request_randomness,
     },
     error::ContractError,
     helpers::{calculate_matches, calculate_prize_distribution, create_next_draw},
@@ -32,6 +32,7 @@ fn do_instantaite() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     let instantiate_msg = InstantiateMsg {
         draw_interval: Duration::Time(60),
         max_tickets_per_user: MAX_TICKETS,
+        request_timeout: Duration::Time(60),
         nois_proxy: NOIS_ADDR.to_string(),
         percentage_per_match: [3, 6, 8, 15, 25, 40],
         ticket_price: coin(TICKET_PRICE, DENOM),
@@ -147,7 +148,7 @@ fn cannot_buy_tickets_when_not_provide_enough_funds() {
     )
     .unwrap_err();
 
-    assert_eq!(err, ContractError::InvalidDenom);
+    assert_eq!(err, ContractError::InvalidCoin);
 
     let err = buy_tickets(
         deps.as_mut(),
@@ -158,7 +159,7 @@ fn cannot_buy_tickets_when_not_provide_enough_funds() {
     )
     .unwrap_err();
 
-    assert_eq!(err, ContractError::InvalidAmount);
+    assert_eq!(err, ContractError::InsufficientFunds);
 }
 
 #[test]
@@ -218,7 +219,7 @@ fn once_purchased_ticktes_it_should_update_prizes() {
 fn cannot_execute_draw_if_is_not_expired() {
     let mut deps = do_instantaite();
 
-    let err = execute_draw(
+    let err = request_randomness(
         deps.as_mut(),
         mock_env(),
         mock_info(PARTICIPANT_ADDR, &[]),
@@ -226,7 +227,7 @@ fn cannot_execute_draw_if_is_not_expired() {
     )
     .unwrap_err();
 
-    assert_eq!(err, ContractError::DrawStillOpen);
+    assert_eq!(err, ContractError::DrawIsOpen);
 }
 
 #[test]
@@ -240,7 +241,7 @@ fn execute_draw_should_work() {
         })
         .unwrap();
 
-    let resp = execute_draw(
+    let resp = request_randomness(
         deps.as_mut(),
         mock_env(),
         mock_info(PARTICIPANT_ADDR, &[]),
@@ -278,7 +279,6 @@ fn only_nois_can_execute_receive_randomness() {
     let err = receive_randomness(
         deps.as_mut(),
         mock_info(PARTICIPANT_ADDR, &[]),
-        mock_env(),
         NoisCallback {
             job_id: "1".to_string(),
             randomness,
@@ -297,7 +297,7 @@ fn execute_receive_randomness_should_work() {
         215, 103, 148, 230, 28, 48, 51, 114, 203, 219,
     ]);
 
-    let random_result: [u8; 6] = ints_in_range(randomness.to_array().unwrap(), 0..=9);
+    let random_result = ints_in_range(randomness.to_array().unwrap(), 6, 0, 9);
     let winner_number = random_result
         .into_iter()
         .fold(String::new(), |acc, x| acc + &x.to_string());
@@ -324,7 +324,6 @@ fn execute_receive_randomness_should_work() {
     receive_randomness(
         deps.as_mut(),
         mock_info("nois", &[]),
-        mock_env(),
         NoisCallback {
             job_id: "1".to_string(),
             randomness: randomness.clone(),
@@ -334,7 +333,7 @@ fn execute_receive_randomness_should_work() {
 
     let draw = get_draw(deps.as_ref(), 1).unwrap().unwrap();
 
-    assert_eq!(draw.status, Status::Claimable);
+    assert_eq!(draw.status, Status::Raffling);
     assert_eq!(draw.winner_number, Some(winner_number));
     assert_eq!(draw.total_tickets, 1);
     assert_eq!(

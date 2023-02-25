@@ -17,7 +17,7 @@ tsGenerator({
       enabled: false,
     },
     client: {
-      enabled: true,
+      enabled: false,
     },
   },
 }).then(() => console.log("Generated typescript interfaces for contracts"));

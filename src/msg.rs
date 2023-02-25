@@ -18,7 +18,7 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    Receive { callback: NoisCallback },
+    NoisReceive { callback: NoisCallback },
     RequestRandomness { draw_id: u64 },
     BuyTickets { tickets: Vec<String>, draw_id: u64 },
     Raffle { draw_id: u64 },

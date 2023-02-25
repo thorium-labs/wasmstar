@@ -1,6 +1,6 @@
 export const NoisAddresses = {
   juno_testnet:
-    "juno1tquqqdvlv3fwu5u6evpt7e4ss47zczug8tq4czjucgx8dulkhjxsegfuds",
+    "juno162vdumcg626zxumvuh9u6vxcakr3rrn804dxfex8qfxnhrldl68ss0lrdn",
   osmosis_testnet: "",
 };
 
