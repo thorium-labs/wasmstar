@@ -6,6 +6,9 @@ use nois::NoisCallback;
 use crate::state::{Config, Draw, TicketResult};
 
 #[cw_serde]
+pub struct MigrateMsg {}
+
+#[cw_serde]
 pub struct InstantiateMsg {
     pub treasury_fee: u8,
     pub request_timeout: Duration,

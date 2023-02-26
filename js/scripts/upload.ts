@@ -21,3 +21,7 @@ export const upload = async () => {
   console.log("Code ID:", codeId);
   return codeId;
 };
+
+(async () => {
+  if (process.argv[2] === '--auto') await upload();
+})()

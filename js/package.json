@@ -6,6 +6,7 @@
   "scripts": {
     "types": "ts-node scripts/types.ts",
     "migrate": "ts-node scripts/migrate.ts",
+    "update": "ts-node scripts/update.ts",
     "upload": "ts-node scripts/upload.ts",
     "deploy": "ts-node scripts/deploy.ts",
     "instantiate": "ts-node scripts/instantiate.ts"

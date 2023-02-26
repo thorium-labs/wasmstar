@@ -39,3 +39,7 @@ export const instantiate = async (codeId = process.env.CODE_ID) => {
   const { contractAddress } = await client.instantiate(address, +(codeId as string), msg, "super_start.v1", "auto", { admin: address });
   console.log("Contract Address:", contractAddress);
 }
+
+(async () => {
+  if (process.argv[2] === '--auto') await instantiate();
+})()

@@ -17,6 +17,7 @@ import chains from "../config/chains";
   const codeId = process.env.CODE_ID as string;
 
   const [{ address }] = await wallet.getAccounts();
+  console.log("Migrating contract", contractAddr, "to code", codeId);
   const result = await client.migrate(address, contractAddr, parseInt(codeId), {}, "auto");
   console.log(result);
 })();

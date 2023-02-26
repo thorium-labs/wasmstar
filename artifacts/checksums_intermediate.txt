@@ -1,1 +1,1 @@
-78b1f53a2c1fcabc7f8135ae3e5e8f1b6c8a9f6655f65096ac7c63d6038b8c6e  ./target/wasm32-unknown-unknown/release/super_star.wasm
+9c62d907f52d360006099e7dc1d6d4ced247c0a7c65c0c110ebbf472e2cea6bf  ./target/wasm32-unknown-unknown/release/super_star.wasm

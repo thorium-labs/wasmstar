@@ -17,13 +17,19 @@ use crate::helpers::{
     calculate_winner_per_match, check_tickets, create_next_draw,
     ensure_is_enough_funds_to_cover_tickets, ensure_ticket_is_valid,
 };
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UpdateConfigMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, UpdateConfigMsg};
 use crate::state::{
     Config, Draw, Status, TicketResult, CONFIG, DRAWS, DRAWS_INDEX, REQUESTS, TICKETS, WINNERS,
 };
 
 const CONTRACT_NAME: &str = "crates.io:super-star";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    let event = Event::new("superstar.v1.MsgMigrateContract");
+    Ok(Response::new().add_event(event))
+}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -348,6 +354,10 @@ pub fn update_config(
 
     if info.sender != deps.api.addr_humanize(&current_config.owner)? {
         return Err(ContractError::Unauthorized);
+    }
+
+    if let Some(new_interval) = config.interval {
+        current_config.interval = new_interval;
     }
 
     if let Some(new_nois_proxy) = config.nois_proxy {
