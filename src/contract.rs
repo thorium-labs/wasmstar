@@ -43,7 +43,7 @@ pub fn instantiate(
     let nois_proxy_addr = deps.api.addr_validate(&msg.nois_proxy)?;
 
     let config = Config {
-        owner: deps.api.addr_canonicalize(&info.sender.as_str())?,
+        owner: deps.api.addr_canonicalize(info.sender.as_str())?,
         interval: msg.draw_interval,
         ticket_price: msg.ticket_price,
         treasury_fee: msg.treasury_fee,
@@ -127,8 +127,8 @@ pub fn buy_tickets(
     draw.total_prize.amount += required_funds.amount;
 
     draw.prize_per_match = Some(calculate_prize_distribution(
-        draw.total_prize.amount.clone(),
-        config.percentage_per_match.clone(),
+        draw.total_prize.amount,
+        config.percentage_per_match,
     ));
 
     DRAWS.save(deps.storage, draw_id, &draw)?;
@@ -191,7 +191,7 @@ pub fn claim_prize(
     Ok(Response::new()
         .add_message(CosmosMsg::Bank(BankMsg::Send {
             to_address: info.sender.to_string(),
-            amount: vec![prize.clone()],
+            amount: vec![prize],
         }))
         .add_event(event))
 }
@@ -271,7 +271,7 @@ pub fn receive_randomness(
         .into_iter()
         .fold(String::new(), |acc, x| acc + &x.to_string());
 
-    draw.winner_number = Some(winner_number.clone());
+    draw.winner_number = Some(winner_number);
     draw.status = Status::Raffling;
 
     DRAWS.save(deps.storage, draw_id, &draw)?;
@@ -279,10 +279,7 @@ pub fn receive_randomness(
 
     let event = Event::new("superstar.v1.MsgReceiveRandomness")
         .add_attribute("draw_id", draw_id.to_string())
-        .add_attribute(
-            "winner_number",
-            draw.winner_number.unwrap_or_default().to_string(),
-        );
+        .add_attribute("winner_number", draw.winner_number.unwrap_or_default());
 
     Ok(Response::new().add_event(event))
 }
@@ -306,7 +303,7 @@ pub fn raffle(deps: DepsMut, env: Env, draw_id: u64) -> Result<Response, Contrac
     let winners_per_match = calculate_winner_per_match(purchases, winner_number.clone());
 
     draw.status = Status::Claimable;
-    draw.winners_per_match = Some(winners_per_match.clone());
+    draw.winners_per_match = Some(winners_per_match);
 
     DRAWS.save(deps.storage, draw_id, &draw)?;
 
@@ -340,7 +337,7 @@ pub fn raffle(deps: DepsMut, env: Env, draw_id: u64) -> Result<Response, Contrac
 
     let event = Event::new("superstar.v1.MsgRaffle")
         .add_attribute("draw_id", draw_id.to_string())
-        .add_attribute("winner_number", winner_number.to_string());
+        .add_attribute("winner_number", winner_number);
 
     Ok(response.add_event(event))
 }
@@ -403,11 +400,13 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn get_current_draw(deps: Deps) -> StdResult<Draw> {
-    Ok(DRAWS.load(deps.storage, DRAWS_INDEX.load(deps.storage)?)?)
+    let draw = DRAWS.load(deps.storage, DRAWS_INDEX.load(deps.storage)?)?;
+    Ok(draw)
 }
 
 pub fn get_draw(deps: Deps, id: u64) -> StdResult<Option<Draw>> {
-    Ok(DRAWS.may_load(deps.storage, id)?)
+    let draws = DRAWS.may_load(deps.storage, id)?;
+    Ok(draws)
 }
 
 pub fn get_tickets(deps: Deps, draw_id: u64, addr: String) -> StdResult<Vec<String>> {
@@ -419,8 +418,10 @@ pub fn get_tickets(deps: Deps, draw_id: u64, addr: String) -> StdResult<Vec<Stri
         .unwrap_or_default())
 }
 
+// TODO make these functions private and bring test on the same file
 pub fn get_config(deps: Deps) -> StdResult<Config> {
-    Ok(CONFIG.load(deps.storage)?)
+    let config = CONFIG.load(deps.storage)?;
+    Ok(config)
 }
 
 pub fn check_winner(deps: Deps, addr: String, draw_id: u64) -> StdResult<Vec<TicketResult>> {

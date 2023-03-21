@@ -44,7 +44,7 @@ impl Draw {
         inital_prize: Uint128,
         prize_per_match: Option<[Uint128; 6]>,
     ) -> Self {
-        return Draw {
+        Draw {
             id,
             status: Status::Open,
             end_time,
@@ -54,7 +54,7 @@ impl Draw {
             total_tickets: 0u64,
             prize_per_match,
             winners_per_match: None,
-        };
+        }
     }
 }
 

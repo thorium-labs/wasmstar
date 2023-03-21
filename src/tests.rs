@@ -205,7 +205,7 @@ fn once_purchased_ticktes_it_should_update_prizes() {
     let config = get_config(deps.as_ref()).unwrap();
 
     let expected_prize_per_match =
-        calculate_prize_distribution(draw.total_prize.amount.clone(), config.percentage_per_match);
+        calculate_prize_distribution(draw.total_prize.amount, config.percentage_per_match);
 
     assert_eq!(draw.total_tickets, 1);
     assert_eq!(
@@ -326,7 +326,7 @@ fn execute_receive_randomness_should_work() {
         mock_info("nois", &[]),
         NoisCallback {
             job_id: "1".to_string(),
-            randomness: randomness.clone(),
+            randomness,
         },
     )
     .unwrap();

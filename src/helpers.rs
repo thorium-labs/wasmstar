@@ -49,8 +49,8 @@ pub fn create_next_draw(deps: DepsMut, env: &Env, inital_prize: Uint128) -> StdR
     }?;
 
     let prize_per_match = Some(calculate_prize_distribution(
-        inital_prize.clone(),
-        config.percentage_per_match.clone(),
+        inital_prize,
+        config.percentage_per_match,
     ));
 
     DRAWS.save(
